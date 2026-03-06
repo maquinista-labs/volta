@@ -28,6 +28,9 @@ type Config struct {
 	// Monitor
 	MonitorPollInterval float64
 
+	// CLI binary path (for bridge)
+	VoltaBin string
+
 	// Database
 	DatabaseURL string
 
@@ -86,6 +89,11 @@ func Load(envFile ...string) (*Config, error) {
 		claudeCmd = "claude"
 	}
 
+	voltaBin := os.Getenv("VOLTA_BIN")
+	if voltaBin == "" {
+		voltaBin = "volta"
+	}
+
 	pollInterval := 2.0
 	if p := os.Getenv("MONITOR_POLL_INTERVAL"); p != "" {
 		pollInterval, err = strconv.ParseFloat(p, 64)
@@ -117,6 +125,7 @@ func Load(envFile ...string) (*Config, error) {
 		VoltaDir:            dir,
 		TmuxSessionName:     sessionName,
 		ClaudeCommand:       claudeCmd,
+		VoltaBin:            voltaBin,
 		MonitorPollInterval: pollInterval,
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		ScriptsDir:          scriptsDir,
