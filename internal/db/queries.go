@@ -1252,3 +1252,84 @@ func scanTasks(rows pgx.Rows) ([]*Task, error) {
 	}
 	return tasks, rows.Err()
 }
+
+// BindTopicToAgent creates an observation binding between a Telegram topic and an agent.
+func BindTopicToAgent(pool *pgxpool.Pool, topicID int64, agentID, bindingType string) error {
+	if bindingType == "" {
+		bindingType = "observe"
+	}
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO topic_agent_bindings (topic_id, agent_id, binding_type)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (topic_id, agent_id) DO UPDATE SET binding_type = $3
+	`, topicID, agentID, bindingType)
+	if err != nil {
+		return fmt.Errorf("binding topic %d to agent %s: %w", topicID, agentID, err)
+	}
+	return nil
+}
+
+// UnbindTopicFromAgent removes the observation binding.
+func UnbindTopicFromAgent(pool *pgxpool.Pool, topicID int64, agentID string) error {
+	_, err := pool.Exec(context.Background(), `
+		DELETE FROM topic_agent_bindings WHERE topic_id = $1 AND agent_id = $2
+	`, topicID, agentID)
+	if err != nil {
+		return fmt.Errorf("unbinding topic %d from agent %s: %w", topicID, agentID, err)
+	}
+	return nil
+}
+
+// TopicAgentBinding represents a binding between a topic and an agent.
+type TopicAgentBinding struct {
+	TopicID     int64     `json:"topic_id"`
+	AgentID     string    `json:"agent_id"`
+	BindingType string    `json:"binding_type"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// GetAgentsForTopic returns all agents observed by a topic.
+func GetAgentsForTopic(pool *pgxpool.Pool, topicID int64) ([]TopicAgentBinding, error) {
+	rows, err := pool.Query(context.Background(), `
+		SELECT topic_id, agent_id, binding_type, created_at
+		FROM topic_agent_bindings WHERE topic_id = $1
+		ORDER BY created_at ASC
+	`, topicID)
+	if err != nil {
+		return nil, fmt.Errorf("getting agents for topic %d: %w", topicID, err)
+	}
+	defer rows.Close()
+
+	var bindings []TopicAgentBinding
+	for rows.Next() {
+		var b TopicAgentBinding
+		if err := rows.Scan(&b.TopicID, &b.AgentID, &b.BindingType, &b.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning binding: %w", err)
+		}
+		bindings = append(bindings, b)
+	}
+	return bindings, rows.Err()
+}
+
+// GetTopicsForAgent returns all topics observing an agent.
+func GetTopicsForAgent(pool *pgxpool.Pool, agentID string) ([]TopicAgentBinding, error) {
+	rows, err := pool.Query(context.Background(), `
+		SELECT topic_id, agent_id, binding_type, created_at
+		FROM topic_agent_bindings WHERE agent_id = $1
+		ORDER BY created_at ASC
+	`, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("getting topics for agent %s: %w", agentID, err)
+	}
+	defer rows.Close()
+
+	var bindings []TopicAgentBinding
+	for rows.Next() {
+		var b TopicAgentBinding
+		if err := rows.Scan(&b.TopicID, &b.AgentID, &b.BindingType, &b.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning binding: %w", err)
+		}
+		bindings = append(bindings, b)
+	}
+	return bindings, rows.Err()
+}
