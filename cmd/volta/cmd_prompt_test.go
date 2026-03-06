@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/otaviocarvalho/volta/internal/db"
+	"github.com/otaviocarvalho/volta/internal/prompt"
 )
 
 func TestPromptCommandRegistered(t *testing.T) {
@@ -44,7 +45,7 @@ func TestBuildSinglePrompt(t *testing.T) {
 		{Kind: "inherited", Content: "Previous work on auth module"},
 	}
 
-	prompt := buildSinglePrompt(task, ctxs)
+	p := prompt.BuildSinglePrompt(task, ctxs)
 
 	checks := []string{
 		"# Task: Design Auth Flow",
@@ -62,14 +63,14 @@ func TestBuildSinglePrompt(t *testing.T) {
 		"AGENT_ID",
 	}
 	for _, c := range checks {
-		if !strings.Contains(prompt, c) {
+		if !strings.Contains(p, c) {
 			t.Errorf("single prompt missing %q", c)
 		}
 	}
 }
 
 func TestBuildAutoPrompt(t *testing.T) {
-	prompt := buildAutoPrompt("auth-system")
+	p := prompt.BuildAutoPrompt("auth-system")
 
 	checks := []string{
 		"# Auto Mode — Project: auth-system",
@@ -80,25 +81,25 @@ func TestBuildAutoPrompt(t *testing.T) {
 		"## Environment",
 	}
 	for _, c := range checks {
-		if !strings.Contains(prompt, c) {
+		if !strings.Contains(p, c) {
 			t.Errorf("auto prompt missing %q", c)
 		}
 	}
 }
 
 func TestBuildBatchPrompt(t *testing.T) {
-	entries := []taskWithContext{
+	entries := []prompt.TaskWithContext{
 		{
-			task: &db.Task{ID: "task-a", Title: "Task A", Priority: 5, Body: "Do A"},
-			ctxs: nil,
+			Task: &db.Task{ID: "task-a", Title: "Task A", Priority: 5, Body: "Do A"},
+			Ctxs: nil,
 		},
 		{
-			task: &db.Task{ID: "task-b", Title: "Task B", Priority: 3, Body: "Do B"},
-			ctxs: nil,
+			Task: &db.Task{ID: "task-b", Title: "Task B", Priority: 3, Body: "Do B"},
+			Ctxs: nil,
 		},
 	}
 
-	prompt := buildBatchPrompt(entries)
+	p := prompt.BuildBatchPrompt(entries)
 
 	checks := []string{
 		"# Batch Mode",
@@ -115,21 +116,8 @@ func TestBuildBatchPrompt(t *testing.T) {
 		"## Environment",
 	}
 	for _, c := range checks {
-		if !strings.Contains(prompt, c) {
+		if !strings.Contains(p, c) {
 			t.Errorf("batch prompt missing %q", c)
 		}
-	}
-}
-
-func TestPromptEnvSection(t *testing.T) {
-	env := promptEnvSection()
-	if !strings.Contains(env, "AGENT_ID") {
-		t.Error("env section missing AGENT_ID")
-	}
-	if !strings.Contains(env, "DATABASE_URL") {
-		t.Error("env section missing DATABASE_URL")
-	}
-	if !strings.Contains(env, "PATH") {
-		t.Error("env section missing PATH")
 	}
 }
