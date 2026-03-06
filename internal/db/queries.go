@@ -53,6 +53,8 @@ type Agent struct {
 	LastSeen     *time.Time `json:"last_seen,omitempty"`
 	WorktreeDir  *string    `json:"worktree_dir,omitempty"`
 	Branch       *string    `json:"branch,omitempty"`
+	RunnerType   string     `json:"runner_type"`
+	RunnerConfig *string    `json:"runner_config,omitempty"`
 }
 
 // MergeQueueEntry represents an entry in the merge queue.
@@ -599,11 +601,14 @@ func SearchContext(pool *pgxpool.Pool, query string) ([]*TaskContext, error) {
 }
 
 // RegisterAgent inserts a new agent record.
-func RegisterAgent(pool *pgxpool.Pool, id, tmuxSession, tmuxWindow string, worktreeDir, branch *string) error {
+func RegisterAgent(pool *pgxpool.Pool, id, tmuxSession, tmuxWindow string, worktreeDir, branch *string, runnerType string, runnerConfig *string) error {
+	if runnerType == "" {
+		runnerType = "claude"
+	}
 	_, err := pool.Exec(context.Background(), `
-		INSERT INTO agents (id, tmux_session, tmux_window, last_seen, worktree_dir, branch)
-		VALUES ($1, $2, $3, NOW(), $4, $5)
-	`, id, tmuxSession, tmuxWindow, worktreeDir, branch)
+		INSERT INTO agents (id, tmux_session, tmux_window, last_seen, worktree_dir, branch, runner_type, runner_config)
+		VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
+	`, id, tmuxSession, tmuxWindow, worktreeDir, branch, runnerType, runnerConfig)
 	if err != nil {
 		return fmt.Errorf("registering agent: %w", err)
 	}
@@ -614,7 +619,7 @@ func RegisterAgent(pool *pgxpool.Pool, id, tmuxSession, tmuxWindow string, workt
 func ListAgents(pool *pgxpool.Pool) ([]*Agent, error) {
 	rows, err := pool.Query(context.Background(), `
 		SELECT id, tmux_session, tmux_window, task_id, status, started_at, last_seen,
-		       worktree_dir, branch
+		       worktree_dir, branch, runner_type, runner_config
 		FROM agents
 		ORDER BY started_at ASC
 	`)
@@ -627,7 +632,7 @@ func ListAgents(pool *pgxpool.Pool) ([]*Agent, error) {
 	for rows.Next() {
 		var a Agent
 		if err := rows.Scan(&a.ID, &a.TmuxSession, &a.TmuxWindow, &a.TaskID, &a.Status, &a.StartedAt, &a.LastSeen,
-			&a.WorktreeDir, &a.Branch); err != nil {
+			&a.WorktreeDir, &a.Branch, &a.RunnerType, &a.RunnerConfig); err != nil {
 			return nil, fmt.Errorf("scanning agent: %w", err)
 		}
 		agents = append(agents, &a)
@@ -707,10 +712,10 @@ func GetAgentByTaskID(pool *pgxpool.Pool, taskID string) (*Agent, error) {
 	var a Agent
 	err := pool.QueryRow(context.Background(), `
 		SELECT id, tmux_session, tmux_window, task_id, status, started_at, last_seen,
-		       worktree_dir, branch
+		       worktree_dir, branch, runner_type, runner_config
 		FROM agents WHERE task_id = $1
 	`, taskID).Scan(&a.ID, &a.TmuxSession, &a.TmuxWindow, &a.TaskID, &a.Status, &a.StartedAt, &a.LastSeen,
-		&a.WorktreeDir, &a.Branch)
+		&a.WorktreeDir, &a.Branch, &a.RunnerType, &a.RunnerConfig)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -725,10 +730,10 @@ func GetAgent(pool *pgxpool.Pool, id string) (*Agent, error) {
 	var a Agent
 	err := pool.QueryRow(context.Background(), `
 		SELECT id, tmux_session, tmux_window, task_id, status, started_at, last_seen,
-		       worktree_dir, branch
+		       worktree_dir, branch, runner_type, runner_config
 		FROM agents WHERE id = $1
 	`, id).Scan(&a.ID, &a.TmuxSession, &a.TmuxWindow, &a.TaskID, &a.Status, &a.StartedAt, &a.LastSeen,
-		&a.WorktreeDir, &a.Branch)
+		&a.WorktreeDir, &a.Branch, &a.RunnerType, &a.RunnerConfig)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

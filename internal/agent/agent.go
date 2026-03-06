@@ -27,7 +27,7 @@ type Agent struct {
 
 // Spawn registers an agent in the DB, creates a tmux window, and sends the bootstrap command.
 func Spawn(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env map[string]string) (*Agent, error) {
-	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, nil, nil); err != nil {
+	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, nil, nil, "claude", nil); err != nil {
 		return nil, fmt.Errorf("registering agent: %w", err)
 	}
 
@@ -63,7 +63,7 @@ func SpawnWithWorktree(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath st
 		return nil, fmt.Errorf("creating worktree: %w", err)
 	}
 
-	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, &worktreeDir, &branch); err != nil {
+	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, &worktreeDir, &branch, "claude", nil); err != nil {
 		git.WorktreeRemove(repoRoot, worktreeDir)
 		return nil, fmt.Errorf("registering agent: %w", err)
 	}
