@@ -24,6 +24,9 @@ type Config struct {
 	UseWorktrees bool
 	ClaudeMDPath string
 	DatabaseURL  string
+	// NotifyCh receives task events for immediate wake-up.
+	// When nil, the orchestrator only uses ticker-based polling.
+	NotifyCh <-chan struct{}
 }
 
 // Run implements the poll-dispatch-reconcile orchestrator loop.
@@ -42,12 +45,23 @@ func Run(ctx context.Context, cfg Config) error {
 	ticker := time.NewTicker(cfg.PollInterval)
 	defer ticker.Stop()
 
+	notifyCh := cfg.NotifyCh
+	if notifyCh == nil {
+		// Use a nil channel that never fires if no notify channel provided.
+		notifyCh = make(chan struct{})
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("Orchestrator shutting down")
 			return nil
 		case <-ticker.C:
+			if err := tick(ctx, cfg); err != nil {
+				log.Printf("Orchestrator tick error: %v", err)
+			}
+		case <-notifyCh:
+			log.Println("Orchestrator: task event received, running immediate tick")
 			if err := tick(ctx, cfg); err != nil {
 				log.Printf("Orchestrator tick error: %v", err)
 			}
