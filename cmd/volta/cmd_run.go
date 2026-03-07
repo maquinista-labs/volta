@@ -109,13 +109,13 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 }
 
-// findClaudeMD locates the claude/CLAUDE.md file.
+// findClaudeMD locates the claude/agent-loop.md file (the orchestrator prompt).
 func findClaudeMD() (string, error) {
 	candidates := []string{
-		"claude/CLAUDE.md",
+		"claude/agent-loop.md",
 	}
 	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "claude", "CLAUDE.md"))
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "claude", "agent-loop.md"))
 	}
 
 	for _, p := range candidates {
@@ -128,5 +128,5 @@ func findClaudeMD() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("claude/CLAUDE.md not found (run from project root)")
+	return "", fmt.Errorf("claude/agent-loop.md not found (run from project root)")
 }

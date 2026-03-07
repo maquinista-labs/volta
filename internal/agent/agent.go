@@ -139,7 +139,7 @@ func sendBootstrap(tmuxSession, agentID, claudeMDPath string, env map[string]str
 
 	claudeMDArg := claudeMDPath
 	if worktreeDir != nil {
-		wtClaudeMD := filepath.Join(*worktreeDir, "claude", "CLAUDE.md")
+		wtClaudeMD := filepath.Join(*worktreeDir, "claude", "agent-loop.md")
 		if _, err := os.Stat(wtClaudeMD); err == nil {
 			claudeMDArg = wtClaudeMD
 		}

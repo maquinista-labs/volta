@@ -26,11 +26,11 @@ func TestRunCommandFlags(t *testing.T) {
 }
 
 func TestFindClaudeMD(t *testing.T) {
-	// Create temp dir with claude/CLAUDE.md.
+	// Create temp dir with claude/agent-loop.md.
 	tmp := t.TempDir()
 	claudeDir := filepath.Join(tmp, "claude")
 	os.MkdirAll(claudeDir, 0o755)
-	os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("# Agent"), 0o644)
+	os.WriteFile(filepath.Join(claudeDir, "agent-loop.md"), []byte("# Agent"), 0o644)
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -53,6 +53,6 @@ func TestFindClaudeMD_NotFound(t *testing.T) {
 
 	_, err := findClaudeMD()
 	if err == nil {
-		t.Error("expected error when claude/CLAUDE.md not found")
+		t.Error("expected error when claude/agent-loop.md not found")
 	}
 }
