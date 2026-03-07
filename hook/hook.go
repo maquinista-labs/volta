@@ -150,9 +150,13 @@ func install(verbose bool) error {
 	sessionStart, _ := hooks["SessionStart"].([]any)
 
 	hookEntry := map[string]any{
-		"type":    "command",
-		"command": hookCommand,
-		"timeout": 5,
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": hookCommand,
+				"timeout": 5,
+			},
+		},
 	}
 
 	sessionStart = append(sessionStart, hookEntry)
@@ -185,6 +189,19 @@ func isHookInstalled(settings map[string]any, command string) bool {
 		if m == nil {
 			continue
 		}
+		// New format: {hooks: [{type, command, timeout}]}
+		innerHooks, _ := m["hooks"].([]any)
+		for _, h := range innerHooks {
+			hm, _ := h.(map[string]any)
+			if hm == nil {
+				continue
+			}
+			cmd, _ := hm["command"].(string)
+			if strings.Contains(cmd, "volta hook") {
+				return true
+			}
+		}
+		// Old format: {type, command, timeout} directly
 		cmd, _ := m["command"].(string)
 		if strings.Contains(cmd, "volta hook") {
 			return true
