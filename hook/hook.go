@@ -66,12 +66,9 @@ func Run() error {
 	// Resolve volta dir
 	dir := os.Getenv("VOLTA_DIR")
 	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("getting home dir: %w", err)
-		}
-		dir = filepath.Join(home, ".volta")
+		dir = "~/.volta"
 	}
+	dir = expandHome(dir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating volta dir: %w", err)
 	}
@@ -175,6 +172,17 @@ func install(verbose bool) error {
 
 	log.Println("Installed Claude Code SessionStart hook.")
 	return nil
+}
+
+func expandHome(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }
 
 // isHookInstalled checks if a hook with the given command is already present.

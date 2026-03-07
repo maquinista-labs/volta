@@ -405,7 +405,7 @@ func (b *Bot) executeUnclaimTask(chatID int64, threadID int, taskID, title strin
 // Long prompts exceed tmux send-keys limits, so we use a temp file.
 func (b *Bot) sendPromptToTmux(windowID, prompt string) error {
 	// Write prompt to temp file
-	tmpFile, err := os.CreateTemp("", "tramuntana-task-*.md")
+	tmpFile, err := os.CreateTemp("", "volta-task-*.md")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -430,7 +430,7 @@ func (b *Bot) buildMinuanoEnv(windowName string) map[string]string {
 
 	env := map[string]string{
 		"DATABASE_URL": b.config.DatabaseURL,
-		"AGENT_ID":     fmt.Sprintf("tramuntana-%s", windowName),
+		"AGENT_ID":     fmt.Sprintf("volta-%s", windowName),
 	}
 
 	if b.config.ScriptsDir != "" {
