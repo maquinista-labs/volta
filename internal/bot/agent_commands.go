@@ -1,0 +1,214 @@
+package bot
+
+import (
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/otaviocarvalho/volta/internal/agent"
+	"github.com/otaviocarvalho/volta/internal/db"
+)
+
+// handleAgentListCommand shows all registered agents.
+func (b *Bot) handleAgentListCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	threadID := getThreadID(msg)
+
+	if b.pool == nil {
+		b.reply(chatID, threadID, "Database not configured.")
+		return
+	}
+
+	agents, err := db.ListAgents(b.pool)
+	if err != nil {
+		log.Printf("Error listing agents: %v", err)
+		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
+		return
+	}
+
+	if len(agents) == 0 {
+		b.reply(chatID, threadID, "No agents registered.")
+		return
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Agents (%d):", len(agents)))
+	for _, a := range agents {
+		taskStr := "—"
+		if a.TaskID != nil {
+			taskStr = *a.TaskID
+		}
+		dur := time.Since(a.StartedAt).Truncate(time.Second)
+		lines = append(lines, fmt.Sprintf("  %s  %s  %s  %s  %s",
+			a.ID, a.Role, a.Status, taskStr, dur))
+	}
+
+	b.reply(chatID, threadID, strings.Join(lines, "\n"))
+}
+
+// handleAgentSpawnCommand spawns a new execution agent.
+func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	threadID := getThreadID(msg)
+
+	if b.pool == nil {
+		b.reply(chatID, threadID, "Database not configured.")
+		return
+	}
+
+	agentName := strings.TrimSpace(msg.CommandArguments())
+	if agentName == "" {
+		agentName = fmt.Sprintf("agent-%d", time.Now().UnixNano())
+	}
+
+	env := map[string]string{
+		"DATABASE_URL": b.config.DatabaseURL,
+	}
+
+	b.orchMu.Lock()
+	orchCfg := b.orchConfig
+	b.orchMu.Unlock()
+
+	var claudeMDPath string
+	var useWorktrees bool
+	if orchCfg != nil {
+		claudeMDPath = orchCfg.ClaudeMDPath
+		useWorktrees = orchCfg.UseWorktrees
+	}
+
+	var a *agent.Agent
+	var err error
+	if useWorktrees && orchCfg != nil {
+		a, err = agent.SpawnWithWorktree(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, orchCfg.Runner, "executor")
+	} else if orchCfg != nil {
+		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, orchCfg.Runner, "executor")
+	} else {
+		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, "", env, nil, "executor")
+	}
+
+	if err != nil {
+		log.Printf("Error spawning agent %s: %v", agentName, err)
+		b.reply(chatID, threadID, fmt.Sprintf("Error spawning agent: %v", err))
+		return
+	}
+
+	b.reply(chatID, threadID, fmt.Sprintf("Agent spawned: %s", a.ID))
+}
+
+// handleAgentKillCommand kills a specific agent.
+func (b *Bot) handleAgentKillCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	threadID := getThreadID(msg)
+
+	if b.pool == nil {
+		b.reply(chatID, threadID, "Database not configured.")
+		return
+	}
+
+	partialID := strings.TrimSpace(msg.CommandArguments())
+	if partialID == "" {
+		b.reply(chatID, threadID, "Usage: /agent_kill <id>")
+		return
+	}
+
+	// Resolve partial ID
+	agentID, err := resolveAgentID(b.pool, partialID)
+	if err != nil {
+		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
+		return
+	}
+
+	if err := agent.Kill(b.pool, b.config.TmuxSessionName, agentID); err != nil {
+		log.Printf("Error killing agent %s: %v", agentID, err)
+		b.reply(chatID, threadID, fmt.Sprintf("Error killing agent: %v", err))
+		return
+	}
+
+	b.reply(chatID, threadID, fmt.Sprintf("Killed agent: %s", agentID))
+}
+
+// handleAgentKillAllCommand kills all agents with confirmation.
+func (b *Bot) handleAgentKillAllCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	threadID := getThreadID(msg)
+
+	if b.pool == nil {
+		b.reply(chatID, threadID, "Database not configured.")
+		return
+	}
+
+	agents, err := db.ListAgents(b.pool)
+	if err != nil {
+		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
+		return
+	}
+	if len(agents) == 0 {
+		b.reply(chatID, threadID, "No agents to kill.")
+		return
+	}
+
+	kb := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("Kill all %d agents", len(agents)), "agent_killall_confirm"),
+			tgbotapi.NewInlineKeyboardButtonData("Cancel", "noop"),
+		),
+	)
+
+	b.sendMessageWithKeyboard(chatID, threadID,
+		fmt.Sprintf("Kill all %d agents?", len(agents)), kb)
+}
+
+// processAgentCallback handles agent-related inline keyboard callbacks.
+func (b *Bot) processAgentCallback(cq *tgbotapi.CallbackQuery, data string) {
+	chatID := cq.Message.Chat.ID
+	threadID := getThreadID(cq.Message)
+
+	switch data {
+	case "agent_killall_confirm":
+		if b.pool == nil {
+			b.reply(chatID, threadID, "Database not configured.")
+			return
+		}
+		if err := agent.KillAll(b.pool, b.config.TmuxSessionName); err != nil {
+			b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
+			return
+		}
+		b.editMessageText(chatID, cq.Message.MessageID, "All agents killed.")
+	}
+}
+
+// resolveAgentID resolves a partial agent ID to a full ID.
+func resolveAgentID(pool *pgxpool.Pool, partialID string) (string, error) {
+	agents, err := db.ListAgents(pool)
+	if err != nil {
+		return "", err
+	}
+
+	// Exact match
+	for _, a := range agents {
+		if a.ID == partialID {
+			return a.ID, nil
+		}
+	}
+
+	// Prefix match
+	var matches []string
+	for _, a := range agents {
+		if strings.HasPrefix(a.ID, partialID) {
+			matches = append(matches, a.ID)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no agent matching '%s'", partialID)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("ambiguous ID '%s': matches %s", partialID, strings.Join(matches, ", "))
+	}
+}

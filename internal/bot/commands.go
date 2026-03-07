@@ -69,6 +69,22 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleUnobserveCommand(msg)
 	case "watching":
 		b.handleWatchingCommand(msg)
+	case "agent_list":
+		b.handleAgentListCommand(msg)
+	case "agent_spawn":
+		b.handleAgentSpawnCommand(msg)
+	case "agent_kill":
+		b.handleAgentKillCommand(msg)
+	case "agent_kill_all":
+		b.handleAgentKillAllCommand(msg)
+	case "orchest_start":
+		b.handleOrchestStartCommand(msg)
+	case "orchest_stop":
+		b.handleOrchestStopCommand(msg)
+	case "orchest_status":
+		b.handleOrchestStatusCommand(msg)
+	case "orchest_scale":
+		b.handleOrchestScaleCommand(msg)
 	default:
 		b.reply(msg.Chat.ID, getThreadID(msg), "Unknown command: /"+msg.Command())
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,6 +31,34 @@ type Config struct {
 	// NotifyFunc is called with status messages for external notification
 	// (e.g., sending to a Telegram topic). Can be nil.
 	NotifyFunc func(message string)
+	// maxAgentsAtomic allows dynamic updates to MaxAgents at runtime.
+	// Initialized from MaxAgents in Run().
+	maxAgentsAtomic *atomic.Int32
+	// SpecsDir is the path to .specs/ directory (auto-detected from repo root if empty).
+	SpecsDir string
+	// BotRef is a reference to the bot for creating planner topics (nil when standalone).
+	BotRef interface {
+		CreatePlannerTopic(chatID int64, specTitle string) (int, error)
+		ReplyToThread(chatID int64, threadID int, text string)
+		GetChatID() int64
+	}
+	// ChatID is the Telegram chat ID for creating planner topics.
+	ChatID int64
+}
+
+// SetMaxAgents updates the max agents value at runtime.
+func (c *Config) SetMaxAgents(n int) {
+	if c.maxAgentsAtomic != nil {
+		c.maxAgentsAtomic.Store(int32(n))
+	}
+}
+
+// GetMaxAgents returns the current max agents value.
+func (c *Config) GetMaxAgents() int {
+	if c.maxAgentsAtomic != nil {
+		return int(c.maxAgentsAtomic.Load())
+	}
+	return c.MaxAgents
 }
 
 // Run implements the poll-dispatch-reconcile orchestrator loop.
@@ -41,6 +70,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 10 * time.Second
 	}
+	cfg.maxAgentsAtomic = &atomic.Int32{}
+	cfg.maxAgentsAtomic.Store(int32(cfg.MaxAgents))
 
 	log.Printf("Orchestrator starting: project=%s maxAgents=%d poll=%s runner=%s",
 		cfg.ProjectID, cfg.MaxAgents, cfg.PollInterval, cfg.Runner.Name())
@@ -73,26 +104,34 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 func tick(ctx context.Context, cfg Config) error {
-	// 1. RECONCILE: detect and clean up dead agents.
+	// 1. RECONCILE: detect and clean up dead agents (both planner and executor).
 	if err := reconcile(cfg); err != nil {
 		log.Printf("Reconcile error: %v", err)
 	}
 
-	// 2. POLL: count active agents and check for ready tasks.
+	// 1.5. SPEC SCAN: detect new spec files needing planning.
+	if cfg.BotRef != nil {
+		if err := specScan(ctx, cfg); err != nil {
+			log.Printf("Spec scan error: %v", err)
+		}
+	}
+
+	// 2. POLL: count active EXECUTOR agents only (planners don't count against slots).
 	agents, err := db.ListAgents(cfg.Pool)
 	if err != nil {
 		return fmt.Errorf("listing agents: %w", err)
 	}
 
-	activeCount := 0
+	executorCount := 0
 	for _, a := range agents {
-		if a.Status != "dead" {
-			activeCount++
+		if a.Status != "dead" && a.Role == "executor" {
+			executorCount++
 		}
 	}
 
-	// 3. DISPATCH: spawn agents for available slots.
-	slotsAvailable := cfg.MaxAgents - activeCount
+	// 3. DISPATCH: spawn executor agents for available slots.
+	maxAgents := cfg.GetMaxAgents()
+	slotsAvailable := maxAgents - executorCount
 	for i := 0; i < slotsAvailable; i++ {
 		dispatched, err := dispatch(cfg)
 		if err != nil {
@@ -143,9 +182,9 @@ func dispatch(cfg Config) (bool, error) {
 	var a *agent.Agent
 	var err error
 	if cfg.UseWorktrees {
-		a, err = agent.SpawnWithWorktree(cfg.Pool, cfg.TmuxSession, agentID, cfg.ClaudeMDPath, env, cfg.Runner)
+		a, err = agent.SpawnWithWorktree(cfg.Pool, cfg.TmuxSession, agentID, cfg.ClaudeMDPath, env, cfg.Runner, "executor")
 	} else {
-		a, err = agent.Spawn(cfg.Pool, cfg.TmuxSession, agentID, cfg.ClaudeMDPath, env, cfg.Runner)
+		a, err = agent.Spawn(cfg.Pool, cfg.TmuxSession, agentID, cfg.ClaudeMDPath, env, cfg.Runner, "executor")
 	}
 	if err != nil {
 		return false, fmt.Errorf("spawning agent: %w", err)

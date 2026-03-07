@@ -27,13 +27,17 @@ type Agent struct {
 }
 
 // Spawn registers an agent in the DB, creates a tmux window, and sends the bootstrap command.
-func Spawn(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env map[string]string, r runner.AgentRunner) (*Agent, error) {
+// role should be "executor" (default) or "planner".
+func Spawn(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env map[string]string, r runner.AgentRunner, role string) (*Agent, error) {
 	runnerName := "claude"
 	if r != nil {
 		runnerName = r.Name()
 	}
+	if role == "" {
+		role = "executor"
+	}
 
-	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, nil, nil, runnerName, nil); err != nil {
+	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, nil, nil, runnerName, nil, role); err != nil {
 		return nil, fmt.Errorf("registering agent: %w", err)
 	}
 
@@ -59,7 +63,8 @@ func Spawn(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env ma
 }
 
 // SpawnWithWorktree registers an agent with an isolated git worktree.
-func SpawnWithWorktree(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env map[string]string, r runner.AgentRunner) (*Agent, error) {
+// role should be "executor" (default) or "planner".
+func SpawnWithWorktree(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath string, env map[string]string, r runner.AgentRunner, role string) (*Agent, error) {
 	repoRoot, err := git.RepoRoot(".")
 	if err != nil {
 		return nil, fmt.Errorf("finding repo root: %w", err)
@@ -77,7 +82,11 @@ func SpawnWithWorktree(pool *pgxpool.Pool, tmuxSession, agentID, claudeMDPath st
 		runnerName = r.Name()
 	}
 
-	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, &worktreeDir, &branch, runnerName, nil); err != nil {
+	if role == "" {
+		role = "executor"
+	}
+
+	if err := db.RegisterAgent(pool, agentID, tmuxSession, agentID, &worktreeDir, &branch, runnerName, nil, role); err != nil {
 		git.WorktreeRemove(repoRoot, worktreeDir)
 		return nil, fmt.Errorf("registering agent: %w", err)
 	}

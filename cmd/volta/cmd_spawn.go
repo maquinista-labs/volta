@@ -62,9 +62,9 @@ var spawnCmd = &cobra.Command{
 		name := args[0]
 		var a *agent.Agent
 		if spawnWorktrees {
-			a, err = agent.SpawnWithWorktree(pool, session, name, claudeMD, env, r)
+			a, err = agent.SpawnWithWorktree(pool, session, name, claudeMD, env, r, "executor")
 		} else {
-			a, err = agent.Spawn(pool, session, name, claudeMD, env, r)
+			a, err = agent.Spawn(pool, session, name, claudeMD, env, r, "executor")
 		}
 		if err != nil {
 			return fmt.Errorf("spawning %s: %w", name, err)

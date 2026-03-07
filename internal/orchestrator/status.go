@@ -12,6 +12,7 @@ type OrchestratorStatus struct {
 	ActiveAgents  int
 	IdleAgents    int
 	WorkingAgents int
+	PlannerAgents int
 	ReadyTasks    int
 	DoneTasks     int
 	FailedTasks   int
@@ -21,9 +22,13 @@ type OrchestratorStatus struct {
 
 // String returns a human-readable status summary.
 func (s OrchestratorStatus) String() string {
+	plannerStr := ""
+	if s.PlannerAgents > 0 {
+		plannerStr = fmt.Sprintf(", %d planners", s.PlannerAgents)
+	}
 	return fmt.Sprintf(
-		"Agents: %d active (%d idle, %d working) | Tasks: %d ready, %d claimed, %d done, %d failed | Merge queue: %d",
-		s.ActiveAgents, s.IdleAgents, s.WorkingAgents,
+		"Agents: %d active (%d idle, %d working%s) | Tasks: %d ready, %d claimed, %d done, %d failed | Merge queue: %d",
+		s.ActiveAgents, s.IdleAgents, s.WorkingAgents, plannerStr,
 		s.ReadyTasks, s.ClaimedTasks, s.DoneTasks, s.FailedTasks,
 		s.MergeQueue,
 	)
@@ -39,6 +44,11 @@ func Status(pool *pgxpool.Pool, projectID *string) (*OrchestratorStatus, error) 
 		return nil, fmt.Errorf("listing agents: %w", err)
 	}
 	for _, a := range agents {
+		if a.Role == "planner" {
+			s.PlannerAgents++
+			s.ActiveAgents++
+			continue
+		}
 		switch a.Status {
 		case "idle":
 			s.IdleAgents++

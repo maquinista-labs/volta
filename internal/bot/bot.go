@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/otaviocarvalho/volta/internal/config"
 	"github.com/otaviocarvalho/volta/internal/bridge"
+	"github.com/otaviocarvalho/volta/internal/orchestrator"
 	"github.com/otaviocarvalho/volta/internal/queue"
 	"github.com/otaviocarvalho/volta/internal/state"
 	"github.com/otaviocarvalho/volta/internal/tmux"
@@ -47,6 +48,10 @@ type Bot struct {
 	msgQueue *queue.Queue
 	// DB pool (optional, set via SetPool for observation commands)
 	pool *pgxpool.Pool
+	// Orchestrator state
+	orchCancel context.CancelFunc
+	orchMu     sync.Mutex
+	orchConfig *orchestrator.Config
 }
 
 // New creates a new Bot instance.
@@ -108,6 +113,14 @@ func (b *Bot) registerCommands() {
 		tgbotapi.BotCommand{Command: "t_merge", Description: "Merge a branch (auto-resolve conflicts)"},
 		tgbotapi.BotCommand{Command: "t_plan", Description: "Plan and create tasks from a description"},
 		tgbotapi.BotCommand{Command: "plan", Description: "Open a planner session in this topic"},
+		tgbotapi.BotCommand{Command: "agent_list", Description: "List all registered agents"},
+		tgbotapi.BotCommand{Command: "agent_spawn", Description: "Spawn a new execution agent"},
+		tgbotapi.BotCommand{Command: "agent_kill", Description: "Kill a specific agent"},
+		tgbotapi.BotCommand{Command: "agent_kill_all", Description: "Kill all agents"},
+		tgbotapi.BotCommand{Command: "orchest_start", Description: "Start the orchestrator"},
+		tgbotapi.BotCommand{Command: "orchest_stop", Description: "Stop the orchestrator"},
+		tgbotapi.BotCommand{Command: "orchest_status", Description: "Show orchestrator status"},
+		tgbotapi.BotCommand{Command: "orchest_scale", Description: "Scale orchestrator agents"},
 	)
 	if _, err := b.api.Request(commands); err != nil {
 		log.Printf("Warning: failed to register bot commands: %v", err)

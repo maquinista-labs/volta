@@ -78,9 +78,9 @@ var runCmd = &cobra.Command{
 			var a *agent.Agent
 			var err error
 			if runWorktrees {
-				a, err = agent.SpawnWithWorktree(pool, session, name, claudeMD, env, r)
+				a, err = agent.SpawnWithWorktree(pool, session, name, claudeMD, env, r, "executor")
 			} else {
-				a, err = agent.Spawn(pool, session, name, claudeMD, env, r)
+				a, err = agent.Spawn(pool, session, name, claudeMD, env, r, "executor")
 			}
 			if err != nil {
 				return fmt.Errorf("spawning %s: %w", name, err)
