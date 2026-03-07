@@ -35,7 +35,7 @@ var upCmd = &cobra.Command{
 			out, err := exec.Command(compose, composeArgs...).CombinedOutput()
 			if err == nil && containsHealthy(string(out)) {
 				fmt.Println(" ready")
-				fmt.Println("✓ volta-postgres started (postgres://minuano:minuano@localhost:5432/minuanodb)")
+				fmt.Println("✓ volta-postgres started (postgres://volta:volta@localhost:5433/voltadb)")
 				return nil
 			}
 			time.Sleep(time.Second)
