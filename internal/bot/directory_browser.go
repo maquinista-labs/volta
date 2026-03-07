@@ -256,7 +256,7 @@ func (b *Bot) createWindowForDir(dir string, userID int64, chatID int64, threadI
 	// Kill the placeholder _init window now that we have a real window
 	tmux.CleanupInitWindow(b.config.TmuxSessionName)
 
-	// Wait for session_map entry (up to 5s)
+	// Wait for session_map entry (up to 5s) — written by the SessionStart hook.
 	sessionMapPath := filepath.Join(b.config.VoltaDir, "session_map.json")
 	sessionKey := ""
 	for i := 0; i < 10; i++ {
@@ -279,6 +279,23 @@ func (b *Bot) createWindowForDir(dir string, userID int64, chatID int64, threadI
 		}
 		if sessionKey != "" {
 			break
+		}
+	}
+
+	// Fallback: if the hook didn't fire, discover the session from Claude's JSONL files
+	if sessionKey == "" {
+		log.Printf("Hook did not create session_map entry for %s, trying fallback discovery...", windowID)
+		if sid := discoverSessionID(dir); sid != "" {
+			sessionKey = b.config.TmuxSessionName + ":" + windowID
+			log.Printf("Fallback: discovered session %s for window %s", sid, windowID)
+			state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
+				data[sessionKey] = state.SessionMapEntry{
+					SessionID: sid,
+					CWD:       dir,
+				}
+			})
+		} else {
+			log.Printf("Warning: could not discover session for window %s", windowID)
 		}
 	}
 
@@ -355,6 +372,46 @@ func (b *Bot) renameForumTopic(chatID int64, threadID int, name string) {
 	if _, err := b.api.MakeRequest("editForumTopic", params); err != nil {
 		log.Printf("Error renaming topic: %v", err)
 	}
+}
+
+// discoverSessionID finds the most recent Claude Code session for a directory
+// by scanning the sessions-index.json in the corresponding project directory.
+func discoverSessionID(cwd string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	// Convert cwd to Claude's project dir name: /home/otavio/code → -home-otavio-code
+	projectDirName := strings.ReplaceAll(cwd, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", projectDirName)
+
+	// Find the most recently modified JSONL file
+	matches, err := filepath.Glob(filepath.Join(projectDir, "*.jsonl"))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+
+	var newest string
+	var newestTime time.Time
+	for _, m := range matches {
+		info, err := os.Stat(m)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newestTime = info.ModTime()
+			newest = m
+		}
+	}
+
+	if newest == "" {
+		return ""
+	}
+
+	// Extract session ID from filename (UUID.jsonl)
+	base := filepath.Base(newest)
+	return strings.TrimSuffix(base, ".jsonl")
 }
 
 // truncateName truncates a name to maxLen chars, adding ellipsis if needed.

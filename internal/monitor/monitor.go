@@ -87,6 +87,10 @@ func (m *Monitor) poll() {
 		return
 	}
 
+	if len(sm) > 0 && len(m.lastSessionMap) == 0 {
+		log.Printf("Monitor: discovered %d session(s) in session_map.json", len(sm))
+	}
+
 	// Detect changes
 	m.detectChanges(sm)
 
