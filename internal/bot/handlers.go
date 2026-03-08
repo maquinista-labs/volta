@@ -65,6 +65,13 @@ func (b *Bot) handleUnboundTopic(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
+	// Ensure tmux session exists (it may have been destroyed if all windows were closed)
+	if err := tmux.EnsureSession(b.config.TmuxSessionName); err != nil {
+		log.Printf("Error ensuring tmux session: %v", err)
+		b.reply(chatID, threadID, "Error creating tmux session.")
+		return
+	}
+
 	// Get unbound windows
 	windows, err := tmux.ListWindows(b.config.TmuxSessionName)
 	if err != nil {
