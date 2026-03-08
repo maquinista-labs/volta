@@ -26,6 +26,8 @@ import (
 )
 
 var (
+	// start --runner flag (default runner for all agents)
+	startRunner string
 	// start --orchestrate flags
 	startOrchestrate   bool
 	startOrchProject   string
@@ -50,6 +52,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().StringVar(&cfgPath, "env", "", "path to .env config file")
+	startCmd.Flags().StringVar(&startRunner, "runner", "", "default agent runner (claude, opencode)")
 	startCmd.Flags().BoolVar(&startOrchestrate, "orchestrate", false, "run orchestrator alongside bot")
 	startCmd.Flags().StringVar(&startOrchProject, "orchestrate-project", "", "project for orchestrator")
 	startCmd.Flags().IntVar(&startOrchMaxAgents, "orchestrate-max-agents", 3, "max agents for orchestrator")
@@ -125,6 +128,11 @@ func runStart() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Override default runner if flag is set.
+	if startRunner != "" {
+		cfg.DefaultRunner = startRunner
+	}
+
 	// Write PID file.
 	if err := writePIDFile(); err != nil {
 		return fmt.Errorf("writing PID file: %w", err)
@@ -134,6 +142,14 @@ func runStart() error {
 	if err != nil {
 		removePIDFile()
 		return fmt.Errorf("creating bot: %w", err)
+	}
+
+	// Set the default runner for agent spawning.
+	if defaultRunner, rErr := runner.Get(cfg.DefaultRunner); rErr == nil {
+		b.SetDefaultRunner(defaultRunner)
+		log.Printf("Default runner: %s", cfg.DefaultRunner)
+	} else {
+		log.Printf("Warning: unknown default runner %q, falling back to claude", cfg.DefaultRunner)
 	}
 
 	msPath := filepath.Join(cfg.VoltaDir, "monitor_state.json")

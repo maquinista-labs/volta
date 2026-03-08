@@ -13,6 +13,7 @@ import (
 	"github.com/otaviocarvalho/volta/internal/bridge"
 	"github.com/otaviocarvalho/volta/internal/orchestrator"
 	"github.com/otaviocarvalho/volta/internal/queue"
+	"github.com/otaviocarvalho/volta/internal/runner"
 	"github.com/otaviocarvalho/volta/internal/state"
 	"github.com/otaviocarvalho/volta/internal/tmux"
 )
@@ -48,6 +49,8 @@ type Bot struct {
 	msgQueue *queue.Queue
 	// DB pool (optional, set via SetPool for observation commands)
 	pool *pgxpool.Pool
+	// Default runner for agent spawning
+	defaultRunner runner.AgentRunner
 	// Orchestrator state
 	orchCancel context.CancelFunc
 	orchMu     sync.Mutex
@@ -113,6 +116,7 @@ func (b *Bot) registerCommands() {
 		tgbotapi.BotCommand{Command: "t_merge", Description: "Merge a branch (auto-resolve conflicts)"},
 		tgbotapi.BotCommand{Command: "t_plan", Description: "Plan and create tasks from a description"},
 		tgbotapi.BotCommand{Command: "plan", Description: "Open a planner session in this topic"},
+		tgbotapi.BotCommand{Command: "runner", Description: "Show/switch default runner (claude, opencode)"},
 		tgbotapi.BotCommand{Command: "agent_list", Description: "List all registered agents"},
 		tgbotapi.BotCommand{Command: "agent_spawn", Description: "Spawn a new execution agent"},
 		tgbotapi.BotCommand{Command: "agent_kill", Description: "Kill a specific agent"},
@@ -262,6 +266,24 @@ func (b *Bot) Config() *config.Config {
 // SetQueue sets the message queue reference for flood control checks.
 func (b *Bot) SetQueue(q *queue.Queue) {
 	b.msgQueue = q
+}
+
+// SetDefaultRunner sets the default runner for agent spawning.
+func (b *Bot) SetDefaultRunner(r runner.AgentRunner) {
+	b.defaultRunner = r
+}
+
+// DefaultRunner returns the default runner, falling back to the orchestrator's runner.
+func (b *Bot) DefaultRunner() runner.AgentRunner {
+	if b.defaultRunner != nil {
+		return b.defaultRunner
+	}
+	b.orchMu.Lock()
+	defer b.orchMu.Unlock()
+	if b.orchConfig != nil {
+		return b.orchConfig.Runner
+	}
+	return nil
 }
 
 // answerCallback answers an inline callback query with a toast message.

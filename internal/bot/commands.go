@@ -85,6 +85,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleOrchestStatusCommand(msg)
 	case "orchest_scale":
 		b.handleOrchestScaleCommand(msg)
+	case "runner":
+		b.handleRunnerCommand(msg)
 	default:
 		b.reply(msg.Chat.ID, getThreadID(msg), "Unknown command: /"+msg.Command())
 	}
