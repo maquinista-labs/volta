@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/otaviocarvalho/volta/internal/agent"
 	"github.com/otaviocarvalho/volta/internal/db"
+	"github.com/otaviocarvalho/volta/internal/runner"
 )
 
 // handleAgentListCommand shows all registered agents.
@@ -42,14 +43,16 @@ func (b *Bot) handleAgentListCommand(msg *tgbotapi.Message) {
 			taskStr = *a.TaskID
 		}
 		dur := time.Since(a.StartedAt).Truncate(time.Second)
-		lines = append(lines, fmt.Sprintf("  %s  %s  %s  %s  %s",
-			a.ID, a.Role, a.Status, taskStr, dur))
+		lines = append(lines, fmt.Sprintf("  %s  %s  %s  %s  %s  %s",
+			a.ID, a.RunnerType, a.Role, a.Status, taskStr, dur))
 	}
 
 	b.reply(chatID, threadID, strings.Join(lines, "\n"))
 }
 
 // handleAgentSpawnCommand spawns a new execution agent.
+// Usage: /agent_spawn [name] [runner]
+// Examples: /agent_spawn, /agent_spawn myagent, /agent_spawn myagent opencode
 func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
@@ -59,9 +62,21 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 		return
 	}
 
-	agentName := strings.TrimSpace(msg.CommandArguments())
-	if agentName == "" {
-		agentName = fmt.Sprintf("agent-%d", time.Now().UnixNano())
+	// Parse arguments: [name] [runner]
+	args := strings.Fields(strings.TrimSpace(msg.CommandArguments()))
+	agentName := fmt.Sprintf("agent-%d", time.Now().UnixNano())
+	var explicitRunner runner.AgentRunner
+
+	if len(args) >= 1 {
+		agentName = args[0]
+	}
+	if len(args) >= 2 {
+		r, err := runner.Get(args[1])
+		if err != nil {
+			b.reply(chatID, threadID, fmt.Sprintf("Unknown runner %q. Available: claude, opencode", args[1]))
+			return
+		}
+		explicitRunner = r
 	}
 
 	env := map[string]string{
@@ -79,14 +94,18 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 		useWorktrees = orchCfg.UseWorktrees
 	}
 
+	// Determine runner: explicit arg > default runner > orchestrator runner > nil
+	r := explicitRunner
+	if r == nil {
+		r = b.DefaultRunner()
+	}
+
 	var a *agent.Agent
 	var err error
 	if useWorktrees && orchCfg != nil {
-		a, err = agent.SpawnWithWorktree(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, orchCfg.Runner, "executor")
-	} else if orchCfg != nil {
-		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, orchCfg.Runner, "executor")
+		a, err = agent.SpawnWithWorktree(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
 	} else {
-		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, "", env, nil, "executor")
+		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
 	}
 
 	if err != nil {
@@ -95,7 +114,11 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 		return
 	}
 
-	b.reply(chatID, threadID, fmt.Sprintf("Agent spawned: %s", a.ID))
+	runnerName := "claude"
+	if r != nil {
+		runnerName = r.Name()
+	}
+	b.reply(chatID, threadID, fmt.Sprintf("Agent spawned: %s (runner: %s)", a.ID, runnerName))
 }
 
 // handleAgentKillCommand kills a specific agent.
@@ -179,6 +202,49 @@ func (b *Bot) processAgentCallback(cq *tgbotapi.CallbackQuery, data string) {
 		}
 		b.editMessageText(chatID, cq.Message.MessageID, "All agents killed.")
 	}
+}
+
+// handleRunnerCommand shows or switches the default runner.
+// Usage: /runner [claude|opencode]
+func (b *Bot) handleRunnerCommand(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+	threadID := getThreadID(msg)
+
+	arg := strings.TrimSpace(msg.CommandArguments())
+	if arg == "" {
+		// Show current runner
+		current := "claude"
+		if r := b.DefaultRunner(); r != nil {
+			current = r.Name()
+		}
+		available := []string{}
+		for name, r := range runner.Runners() {
+			marker := ""
+			if name == current {
+				marker = " (active)"
+			}
+			installed := ""
+			if !r.DetectInstallation() {
+				installed = " [not installed]"
+			}
+			available = append(available, fmt.Sprintf("  %s%s%s", name, marker, installed))
+		}
+		b.reply(chatID, threadID, fmt.Sprintf("Default runner: %s\nAvailable:\n%s", current, strings.Join(available, "\n")))
+		return
+	}
+
+	r, err := runner.Get(arg)
+	if err != nil {
+		b.reply(chatID, threadID, fmt.Sprintf("Unknown runner %q. Available: claude, opencode", arg))
+		return
+	}
+
+	if !r.DetectInstallation() {
+		b.reply(chatID, threadID, fmt.Sprintf("Warning: %q is not installed on this system. Setting anyway.", arg))
+	}
+
+	b.SetDefaultRunner(r)
+	b.reply(chatID, threadID, fmt.Sprintf("Default runner switched to: %s", r.Name()))
 }
 
 // resolveAgentID resolves a partial agent ID to a full ID.

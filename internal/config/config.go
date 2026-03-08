@@ -40,6 +40,9 @@ type Config struct {
 	// Project defaults
 	DefaultProject    string
 	PlannerPromptPath string
+
+	// Default agent runner (claude, opencode, etc.)
+	DefaultRunner string
 }
 
 func Load(envFile ...string) (*Config, error) {
@@ -118,6 +121,11 @@ func Load(envFile ...string) (*Config, error) {
 
 	plannerPromptPath := os.Getenv("VOLTA_PLANNER_PROMPT")
 
+	defaultRunner := os.Getenv("VOLTA_DEFAULT_RUNNER")
+	if defaultRunner == "" {
+		defaultRunner = "claude"
+	}
+
 	return &Config{
 		TelegramBotToken:    token,
 		AllowedUsers:        users,
@@ -133,6 +141,7 @@ func Load(envFile ...string) (*Config, error) {
 		ApprovalsTopicID:    approvalsTopicID,
 		DefaultProject:      defaultProject,
 		PlannerPromptPath:   plannerPromptPath,
+		DefaultRunner:       defaultRunner,
 	}, nil
 }
 
