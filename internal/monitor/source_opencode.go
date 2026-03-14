@@ -79,24 +79,36 @@ func (o *OpenCodeSource) DiscoverSessions() []ActiveSession {
 		}
 	}
 
-	// Try to discover session IDs for entries that don't have one yet
+	// Discover or re-discover session IDs.
+	// OpenCode may create new sessions for the same directory (e.g. on restart),
+	// so we always check the latest session and update if it changed.
 	for key, entry := range sm {
-		if entry.SessionID == "" {
-			discovered, err := o.discoverSession(entry.CWD)
-			if err != nil {
-				continue
-			}
-			entry.SessionID = discovered
-			sm[key] = entry
+		discovered, err := o.discoverSession(entry.CWD)
+		if err != nil {
+			continue
+		}
+		if discovered == entry.SessionID {
+			continue // unchanged
+		}
+		old := entry.SessionID
+		entry.SessionID = discovered
+		sm[key] = entry
 
-			// Persist discovered session ID
-			_ = state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
-				if e, ok := data[key]; ok {
-					e.SessionID = discovered
-					data[key] = e
-				}
-			})
+		// Persist discovered session ID
+		_ = state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
+			if e, ok := data[key]; ok {
+				e.SessionID = discovered
+				data[key] = e
+			}
+		})
+
+		// Reset offset so we read from the start of the new session
+		o.monitorState.RemoveSession(key)
+
+		if old == "" {
 			log.Printf("OpenCode session discovered: %s -> %s", entry.CWD, discovered)
+		} else {
+			log.Printf("OpenCode session changed: %s -> %s (was %s)", entry.CWD, discovered, old)
 		}
 	}
 
