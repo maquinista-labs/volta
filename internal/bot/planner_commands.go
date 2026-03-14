@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/otaviocarvalho/volta/internal/runner"
 	"github.com/otaviocarvalho/volta/internal/tmux"
 )
 
@@ -74,12 +75,17 @@ func (b *Bot) plannerStart(msg *tgbotapi.Message, chatID int64, threadID int, to
 	}
 	env["MINUANO_PROJECT"] = project
 
-	// Build planner Claude command
-	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions --system-prompt \"$(cat %s)\"",
-		b.config.ClaudeCommand, b.config.PlannerPromptPath)
+	// Build planner command using the configured runner
+	var plannerCmd string
+	if r := b.DefaultRunner(); r != nil {
+		plannerCmd = r.PlannerCommand(b.config.PlannerPromptPath, runner.Config{Env: env})
+	} else {
+		plannerCmd = fmt.Sprintf("claude --dangerously-skip-permissions --system-prompt \"$(cat %s)\"",
+			b.config.PlannerPromptPath)
+	}
 
-	// Create tmux window with the planner Claude command
-	windowID, err := tmux.NewWindow(b.config.TmuxSessionName, topicName, dir, claudeCmd, env)
+	// Create tmux window with the planner command
+	windowID, err := tmux.NewWindow(b.config.TmuxSessionName, topicName, dir, plannerCmd, env)
 	if err != nil {
 		b.reply(chatID, threadID, fmt.Sprintf("Error creating planner window: %v", err))
 		return
@@ -98,6 +104,12 @@ func (b *Bot) plannerStart(msg *tgbotapi.Message, chatID int64, threadID int, to
 	b.state.SetGroupChatID(userIDStr, newThreadIDStr, chatID)
 	b.state.BindProject(newThreadIDStr, project)
 	b.state.SetWindowDisplayName(windowID, topicName)
+	// Track which runner owns this window for transcript source routing
+	if r := b.DefaultRunner(); r != nil {
+		b.state.SetWindowRunner(windowID, r.Name())
+	} else {
+		b.state.SetWindowRunner(windowID, "claude")
+	}
 	b.saveState()
 
 	// Note: we don't call `minuano planner start` here because it creates
@@ -136,10 +148,15 @@ func (b *Bot) plannerReopen(msg *tgbotapi.Message, chatID int64, threadID int, t
 	// Check if topic already has a bound window — just restart Claude in it
 	userID := strconv.FormatInt(msg.From.ID, 10)
 	if windowID, bound := b.state.GetWindowForThread(userID, topicIDStr); bound {
-		// Window exists, try to restart Claude in it
-		claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions --system-prompt \"$(cat %s)\"",
-			b.config.ClaudeCommand, b.config.PlannerPromptPath)
-		if err := tmux.SendKeysWithDelay(b.config.TmuxSessionName, windowID, claudeCmd, 500); err != nil {
+		// Window exists, try to restart the agent in it
+		var plannerCmd string
+		if r := b.DefaultRunner(); r != nil {
+			plannerCmd = r.PlannerCommand(b.config.PlannerPromptPath, runner.Config{})
+		} else {
+			plannerCmd = fmt.Sprintf("claude --dangerously-skip-permissions --system-prompt \"$(cat %s)\"",
+				b.config.PlannerPromptPath)
+		}
+		if err := tmux.SendKeysWithDelay(b.config.TmuxSessionName, windowID, plannerCmd, 500); err != nil {
 			if tmux.IsWindowDead(err) {
 				// Window is dead, fall through to create new one
 				b.plannerStart(msg, chatID, threadID, topicIDStr, project)

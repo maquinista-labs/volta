@@ -32,7 +32,7 @@ func TestWindowIDFromSessionKey(t *testing.T) {
 
 func TestMonitorNew(t *testing.T) {
 	cfg := &config.Config{
-		VoltaDir:       t.TempDir(),
+		VoltaDir:            t.TempDir(),
 		MonitorPollInterval: 2.0,
 	}
 	st := state.NewState()
@@ -47,24 +47,24 @@ func TestMonitorNew(t *testing.T) {
 	}
 }
 
-func TestHasFileChanged(t *testing.T) {
+func TestClaudeSource_HasFileChanged(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.jsonl")
 	os.WriteFile(path, []byte(`{}`), 0o644)
 
 	cfg := &config.Config{
-		VoltaDir:       dir,
+		VoltaDir:            dir,
 		MonitorPollInterval: 2.0,
 	}
-	m := New(cfg, state.NewState(), state.NewMonitorState(), nil)
+	cs := NewClaudeSource(cfg, state.NewMonitorState())
 
 	// First check should return true
-	if !m.hasFileChanged(path) {
+	if !cs.hasFileChanged(path) {
 		t.Error("first check should detect change")
 	}
 
 	// Second check without modification should return false
-	if m.hasFileChanged(path) {
+	if cs.hasFileChanged(path) {
 		t.Error("unchanged file should not detect change")
 	}
 
@@ -73,24 +73,24 @@ func TestHasFileChanged(t *testing.T) {
 	now := time.Now().Add(1 * time.Second)
 	os.WriteFile(path, []byte(`{"updated":true}`), 0o644)
 	os.Chtimes(path, now, now)
-	if !m.hasFileChanged(path) {
+	if !cs.hasFileChanged(path) {
 		t.Error("modified file should detect change")
 	}
 }
 
-func TestHasFileChanged_NonExistent(t *testing.T) {
+func TestClaudeSource_HasFileChanged_NonExistent(t *testing.T) {
 	cfg := &config.Config{
-		VoltaDir:       t.TempDir(),
+		VoltaDir:            t.TempDir(),
 		MonitorPollInterval: 2.0,
 	}
-	m := New(cfg, state.NewState(), state.NewMonitorState(), nil)
+	cs := NewClaudeSource(cfg, state.NewMonitorState())
 
-	if m.hasFileChanged("/nonexistent/file.jsonl") {
+	if cs.hasFileChanged("/nonexistent/file.jsonl") {
 		t.Error("nonexistent file should not detect change")
 	}
 }
 
-func TestProcessSession_Truncation(t *testing.T) {
+func TestClaudeSource_ReadNewEntries_Truncation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.jsonl")
 
@@ -98,7 +98,7 @@ func TestProcessSession_Truncation(t *testing.T) {
 	os.WriteFile(path, []byte(`{"type":"assistant","message":{"content":"hello"}}`+"\n"), 0o644)
 
 	cfg := &config.Config{
-		VoltaDir:       dir,
+		VoltaDir:            dir,
 		MonitorPollInterval: 2.0,
 	}
 	ms := state.NewMonitorState()
@@ -106,10 +106,17 @@ func TestProcessSession_Truncation(t *testing.T) {
 	// Set offset beyond file size to simulate /clear truncation
 	ms.UpdateOffset("test:@1", "test-session", path, 99999)
 
-	m := New(cfg, state.NewState(), ms, nil)
+	cs := NewClaudeSource(cfg, ms)
+	// Populate lastSessionMap so ReadNewEntries can find the entry
+	cs.lastSessionMap = map[string]state.SessionMapEntry{
+		"test:@1": {SessionID: "test-session", CWD: dir},
+	}
 
-	// processSession should reset offset and not crash
-	m.processSession("test:@1", "test-session", "@1", path)
+	// ReadNewEntries should reset offset and not crash
+	_, newOffset, err := cs.ReadNewEntries(ActiveSession{Key: "test:@1", WindowID: "@1"}, 99999)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Offset should be updated to actual content size
 	tracked, ok := ms.GetTracked("test:@1")
@@ -119,31 +126,37 @@ func TestProcessSession_Truncation(t *testing.T) {
 	if tracked.LastByteOffset == 99999 {
 		t.Error("offset should have been reset from 99999")
 	}
+	if newOffset == 99999 {
+		t.Error("returned offset should have been reset from 99999")
+	}
 }
 
-func TestDetectChanges_RemovesStale(t *testing.T) {
+func TestClaudeSource_DiscoverSessions_RemovesStale(t *testing.T) {
+	dir := t.TempDir()
 	cfg := &config.Config{
-		VoltaDir:       t.TempDir(),
+		VoltaDir:            dir,
 		MonitorPollInterval: 2.0,
 	}
 	ms := state.NewMonitorState()
 	ms.UpdateOffset("old:@1", "old", "/some/path", 100)
 
-	m := New(cfg, state.NewState(), ms, nil)
-	m.lastSessionMap = map[string]state.SessionMapEntry{
+	cs := NewClaudeSource(cfg, ms)
+	cs.lastSessionMap = map[string]state.SessionMapEntry{
 		"old:@1": {SessionID: "old"},
 	}
 
-	// New map without the old entry
-	newMap := map[string]state.SessionMapEntry{}
-	m.detectChanges(newMap)
+	// Write an empty session_map.json
+	os.WriteFile(filepath.Join(dir, "session_map.json"), []byte(`{}`), 0o644)
+
+	// DiscoverSessions with empty map should clean up stale entries
+	cs.DiscoverSessions()
 
 	if _, ok := ms.GetTracked("old:@1"); ok {
 		t.Error("stale session should be removed")
 	}
 }
 
-func TestFindJSONLFile_SessionsIndex(t *testing.T) {
+func TestClaudeSource_SearchSessionsIndex(t *testing.T) {
 	home := os.Getenv("HOME")
 	if home == "" {
 		t.Skip("HOME not set")
@@ -162,12 +175,12 @@ func TestFindJSONLFile_SessionsIndex(t *testing.T) {
 	os.WriteFile(filepath.Join(projectDir, "test-session-id.jsonl"), []byte(`{}`), 0o644)
 
 	cfg := &config.Config{
-		VoltaDir:       t.TempDir(),
+		VoltaDir:            t.TempDir(),
 		MonitorPollInterval: 2.0,
 	}
-	m := New(cfg, state.NewState(), state.NewMonitorState(), nil)
+	cs := NewClaudeSource(cfg, state.NewMonitorState())
 
-	path := m.searchSessionsIndex(
+	path := cs.searchSessionsIndex(
 		filepath.Join(projectDir, "sessions-index.json"),
 		"test-session-id",
 		projectDir,
@@ -177,23 +190,23 @@ func TestFindJSONLFile_SessionsIndex(t *testing.T) {
 	}
 }
 
-func TestSearchJSONLFiles(t *testing.T) {
+func TestClaudeSource_SearchJSONLFiles(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "abc-123.jsonl"), []byte(`{}`), 0o644)
 	os.WriteFile(filepath.Join(dir, "other.jsonl"), []byte(`{}`), 0o644)
 
 	cfg := &config.Config{
-		VoltaDir:       t.TempDir(),
+		VoltaDir:            t.TempDir(),
 		MonitorPollInterval: 2.0,
 	}
-	m := New(cfg, state.NewState(), state.NewMonitorState(), nil)
+	cs := NewClaudeSource(cfg, state.NewMonitorState())
 
-	path := m.searchJSONLFiles(dir, "abc-123")
+	path := cs.searchJSONLFiles(dir, "abc-123")
 	if path == "" {
 		t.Error("should find JSONL file by name")
 	}
 
-	path = m.searchJSONLFiles(dir, "nonexistent")
+	path = cs.searchJSONLFiles(dir, "nonexistent")
 	if path != "" {
 		t.Error("should not find nonexistent session")
 	}

@@ -166,7 +166,11 @@ func runStart() error {
 	q := queue.New(b.API())
 	b.SetQueue(q)
 
+	claudeSrc := monitor.NewClaudeSource(cfg, ms)
+	monitor.RegisterSource("claude", claudeSrc)
+
 	mon := monitor.New(cfg, b.State(), ms, q)
+	mon.AddSource(claudeSrc)
 	mon.PlanHandler = b.HandlePlanFromMonitor
 
 	sp := bot.NewStatusPoller(b, q, mon)

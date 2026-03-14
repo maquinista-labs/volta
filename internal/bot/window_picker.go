@@ -131,6 +131,13 @@ func (b *Bot) handleWinBind(cq *tgbotapi.CallbackQuery, wps *windowPickerState, 
 	threadIDStr := strconv.Itoa(threadID)
 	b.state.BindThread(userIDStr, threadIDStr, window.ID)
 	b.state.SetWindowDisplayName(window.ID, window.Name)
+	// Default to claude for manually-bound windows (no runner context available)
+	if b.state.GetWindowRunner(window.ID) == "claude" {
+		// Only set if not already set (preserves existing runner assignment)
+		if r := b.DefaultRunner(); r != nil {
+			b.state.SetWindowRunner(window.ID, r.Name())
+		}
+	}
 	b.saveState()
 
 	// Use topic name as display name (fall back to window name)

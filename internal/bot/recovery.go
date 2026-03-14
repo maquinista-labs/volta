@@ -88,6 +88,7 @@ func reResolveWindow(s *state.State, oldID, newID string) {
 	// Save values that RemoveWindowState will delete
 	savedWS, hasWS := s.GetWindowState(oldID)
 	savedName, hasName := s.GetWindowDisplayName(oldID)
+	savedRunner := s.GetWindowRunner(oldID)
 
 	// Save offsets before removal
 	savedOffsets := make(map[string]int64)
@@ -105,7 +106,7 @@ func reResolveWindow(s *state.State, oldID, newID string) {
 		s.BindThread(ut.UserID, ut.ThreadID, newID)
 	}
 
-	// Remove old window state (this also removes display name and offsets)
+	// Remove old window state (this also removes display name, runner, and offsets)
 	s.RemoveWindowState(oldID)
 
 	// Restore to new ID
@@ -115,6 +116,7 @@ func reResolveWindow(s *state.State, oldID, newID string) {
 	if hasName {
 		s.SetWindowDisplayName(newID, savedName)
 	}
+	s.SetWindowRunner(newID, savedRunner)
 	for userID, offset := range savedOffsets {
 		s.SetUserWindowOffset(userID, newID, offset)
 	}

@@ -313,6 +313,12 @@ func (b *Bot) createWindowForDir(dir string, userID int64, chatID int64, threadI
 	userIDStr := strconv.FormatInt(userID, 10)
 	threadIDStr := strconv.Itoa(threadID)
 	b.state.BindThread(userIDStr, threadIDStr, windowID)
+	// Track which runner owns this window for transcript source routing
+	if r := b.DefaultRunner(); r != nil {
+		b.state.SetWindowRunner(windowID, r.Name())
+	} else {
+		b.state.SetWindowRunner(windowID, "claude")
+	}
 	b.saveState()
 
 	// Use topic name as display name (fall back to directory base name)

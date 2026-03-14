@@ -115,14 +115,27 @@ func (sp *StatusPoller) poll() {
 			continue
 		}
 
+		// Look up TranscriptSource for this window's runner
+		runnerName := sp.bot.state.GetWindowRunner(windowID)
+		src, srcErr := monitor.GetSource(runnerName)
+
 		// Check interactive UI once per pane
-		isInteractive := monitor.IsInteractiveUI(paneText)
+		var isInteractive bool
+		if srcErr == nil {
+			isInteractive = src.IsInteractiveUI(paneText)
+		} else {
+			isInteractive = monitor.IsInteractiveUI(paneText)
+		}
 
 		// Extract status line (only if not interactive)
 		var statusText string
 		var hasStatus bool
 		if !isInteractive {
-			statusText, hasStatus = monitor.ExtractStatusLine(paneText)
+			if srcErr == nil {
+				statusText, hasStatus = src.ExtractStatusLine(paneText)
+			} else {
+				statusText, hasStatus = monitor.ExtractStatusLine(paneText)
+			}
 
 			if hasStatus {
 				sp.mu.Lock()

@@ -38,6 +38,7 @@ type State struct {
 	GroupChatIDs       map[string]int64             `json:"group_chat_ids"`       // "user_id:thread_id" → chat_id
 	ProjectBindings    map[string]string            `json:"project_bindings"`     // thread_id → project_id
 	WorktreeBindings   map[string]WorktreeInfo      `json:"worktree_bindings"`    // thread_id → worktree info
+	WindowRunners      map[string]string            `json:"window_runners"`       // window_id → runner_name
 }
 
 // NewState creates a new empty state.
@@ -50,6 +51,7 @@ func NewState() *State {
 		GroupChatIDs:       make(map[string]int64),
 		ProjectBindings:    make(map[string]string),
 		WorktreeBindings:   make(map[string]WorktreeInfo),
+		WindowRunners:      make(map[string]string),
 	}
 }
 
@@ -80,6 +82,9 @@ func Load(path string) (*State, error) {
 	}
 	if s.WorktreeBindings == nil {
 		s.WorktreeBindings = make(map[string]WorktreeInfo)
+	}
+	if s.WindowRunners == nil {
+		s.WindowRunners = make(map[string]string)
 	}
 	return s, nil
 }
@@ -160,6 +165,7 @@ func (s *State) RemoveWindowState(windowID string) {
 	defer s.mu.Unlock()
 	delete(s.WindowStates, windowID)
 	delete(s.WindowDisplayNames, windowID)
+	delete(s.WindowRunners, windowID)
 	// Remove window from all user offsets
 	for uid := range s.UserWindowOffsets {
 		delete(s.UserWindowOffsets[uid], windowID)
@@ -167,6 +173,30 @@ func (s *State) RemoveWindowState(windowID string) {
 			delete(s.UserWindowOffsets, uid)
 		}
 	}
+}
+
+// SetWindowRunner sets the runner name for a window.
+func (s *State) SetWindowRunner(windowID, runnerName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.WindowRunners[windowID] = runnerName
+}
+
+// GetWindowRunner returns the runner name for a window, defaulting to "claude".
+func (s *State) GetWindowRunner(windowID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if name, ok := s.WindowRunners[windowID]; ok {
+		return name
+	}
+	return "claude"
+}
+
+// ClearWindowRunner removes the runner binding for a window.
+func (s *State) ClearWindowRunner(windowID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.WindowRunners, windowID)
 }
 
 // SetGroupChatID stores the group chat ID for a user+thread.
