@@ -166,10 +166,10 @@ func runStart() error {
 	q := queue.New(b.API())
 	b.SetQueue(q)
 
-	claudeSrc := monitor.NewClaudeSource(cfg, ms)
+	claudeSrc := monitor.NewClaudeSource(cfg, b.State(), ms)
 	monitor.RegisterSource("claude", claudeSrc)
 
-	opencodeSrc := monitor.NewOpenCodeSource(cfg, ms)
+	opencodeSrc := monitor.NewOpenCodeSource(cfg, b.State(), ms)
 	monitor.RegisterSource("opencode", opencodeSrc)
 
 	mon := monitor.New(cfg, b.State(), ms, q)

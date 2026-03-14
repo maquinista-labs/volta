@@ -17,6 +17,7 @@ import (
 // It discovers sessions via session_map.json and reads JSONL transcript files.
 type ClaudeSource struct {
 	config         *config.Config
+	appState       *state.State
 	monitorState   *state.MonitorState
 	pendingTools   map[string]PendingTool
 	fileMtimes     map[string]time.Time
@@ -24,9 +25,10 @@ type ClaudeSource struct {
 }
 
 // NewClaudeSource creates a new ClaudeSource.
-func NewClaudeSource(cfg *config.Config, ms *state.MonitorState) *ClaudeSource {
+func NewClaudeSource(cfg *config.Config, st *state.State, ms *state.MonitorState) *ClaudeSource {
 	return &ClaudeSource{
 		config:         cfg,
+		appState:       st,
 		monitorState:   ms,
 		pendingTools:   make(map[string]PendingTool),
 		fileMtimes:     make(map[string]time.Time),
@@ -45,10 +47,6 @@ func (c *ClaudeSource) DiscoverSessions() []ActiveSession {
 		return nil
 	}
 
-	if len(sm) > 0 && len(c.lastSessionMap) == 0 {
-		log.Printf("ClaudeSource: discovered %d session(s) in session_map.json", len(sm))
-	}
-
 	// Detect changes: clean up stale sessions
 	for key := range c.lastSessionMap {
 		if _, ok := sm[key]; !ok {
@@ -61,6 +59,10 @@ func (c *ClaudeSource) DiscoverSessions() []ActiveSession {
 	for key := range sm {
 		windowID := windowIDFromSessionKey(key)
 		if windowID == "" {
+			continue
+		}
+		// Only claim sessions owned by this source
+		if c.appState.GetWindowRunner(windowID) != "claude" {
 			continue
 		}
 		sessions = append(sessions, ActiveSession{

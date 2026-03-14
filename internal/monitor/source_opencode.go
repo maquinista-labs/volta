@@ -18,6 +18,7 @@ import (
 // It discovers sessions via session_map.json and reads transcript parts from OpenCode's SQLite database.
 type OpenCodeSource struct {
 	config         *config.Config
+	appState       *state.State
 	monitorState   *state.MonitorState
 	dbPath         string
 	db             *sql.DB
@@ -26,9 +27,10 @@ type OpenCodeSource struct {
 }
 
 // NewOpenCodeSource creates a new OpenCodeSource.
-func NewOpenCodeSource(cfg *config.Config, ms *state.MonitorState) *OpenCodeSource {
+func NewOpenCodeSource(cfg *config.Config, st *state.State, ms *state.MonitorState) *OpenCodeSource {
 	return &OpenCodeSource{
 		config:         cfg,
+		appState:       st,
 		monitorState:   ms,
 		dbPath:         openCodeDBPath(),
 		knownTools:     make(map[string]string),
@@ -105,6 +107,10 @@ func (o *OpenCodeSource) DiscoverSessions() []ActiveSession {
 		}
 		windowID := windowIDFromSessionKey(key)
 		if windowID == "" {
+			continue
+		}
+		// Only claim sessions owned by this source
+		if o.appState.GetWindowRunner(windowID) != "opencode" {
 			continue
 		}
 		sessions = append(sessions, ActiveSession{
