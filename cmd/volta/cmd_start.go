@@ -200,6 +200,9 @@ func runStart() error {
 				log.Printf("Warning: failed to connect DB for orchestrator: %v", dbErr)
 			}
 		}
+		if pool != nil {
+			b.SetPool(pool)
+		}
 		if pool == nil {
 			log.Println("Warning: --orchestrate requires DATABASE_URL for DB pool")
 			startOrchestrate = false

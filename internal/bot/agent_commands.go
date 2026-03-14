@@ -18,12 +18,13 @@ func (b *Bot) handleAgentListCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use agent commands.")
 		return
 	}
 
-	agents, err := db.ListAgents(b.pool)
+	agents, err := db.ListAgents(pool)
 	if err != nil {
 		log.Printf("Error listing agents: %v", err)
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
@@ -57,8 +58,9 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use agent commands.")
 		return
 	}
 
@@ -103,9 +105,9 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 	var a *agent.Agent
 	var err error
 	if useWorktrees && orchCfg != nil {
-		a, err = agent.SpawnWithWorktree(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
+		a, err = agent.SpawnWithWorktree(pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
 	} else {
-		a, err = agent.Spawn(b.pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
+		a, err = agent.Spawn(pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
 	}
 
 	if err != nil {
@@ -126,8 +128,9 @@ func (b *Bot) handleAgentKillCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use agent commands.")
 		return
 	}
 
@@ -138,13 +141,13 @@ func (b *Bot) handleAgentKillCommand(msg *tgbotapi.Message) {
 	}
 
 	// Resolve partial ID
-	agentID, err := resolveAgentID(b.pool, partialID)
+	agentID, err := resolveAgentID(pool, partialID)
 	if err != nil {
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 		return
 	}
 
-	if err := agent.Kill(b.pool, b.config.TmuxSessionName, agentID); err != nil {
+	if err := agent.Kill(pool, b.config.TmuxSessionName, agentID); err != nil {
 		log.Printf("Error killing agent %s: %v", agentID, err)
 		b.reply(chatID, threadID, fmt.Sprintf("Error killing agent: %v", err))
 		return
@@ -158,12 +161,13 @@ func (b *Bot) handleAgentKillAllCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use agent commands.")
 		return
 	}
 
-	agents, err := db.ListAgents(b.pool)
+	agents, err := db.ListAgents(pool)
 	if err != nil {
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 		return
@@ -192,11 +196,12 @@ func (b *Bot) processAgentCallback(cq *tgbotapi.CallbackQuery, data string) {
 
 	switch data {
 	case "agent_killall_confirm":
-		if b.pool == nil {
-			b.reply(chatID, threadID, "Database not configured.")
+		pool := b.getPool()
+		if pool == nil {
+			b.reply(chatID, threadID, "Database not available.")
 			return
 		}
-		if err := agent.KillAll(b.pool, b.config.TmuxSessionName); err != nil {
+		if err := agent.KillAll(pool, b.config.TmuxSessionName); err != nil {
 			b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 			return
 		}

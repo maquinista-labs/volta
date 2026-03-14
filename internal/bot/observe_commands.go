@@ -10,9 +10,31 @@ import (
 	"github.com/otaviocarvalho/volta/internal/db"
 )
 
-// SetPool sets the database pool for observation commands.
+// SetPool sets the database pool explicitly (e.g. from --orchestrate startup).
 func (b *Bot) SetPool(pool *pgxpool.Pool) {
+	b.poolMu.Lock()
 	b.pool = pool
+	b.poolMu.Unlock()
+}
+
+// getPool returns the DB pool, connecting lazily on first use if DATABASE_URL is set.
+func (b *Bot) getPool() *pgxpool.Pool {
+	b.poolMu.Lock()
+	defer b.poolMu.Unlock()
+	if b.pool != nil {
+		return b.pool
+	}
+	if b.config.DatabaseURL == "" {
+		return nil
+	}
+	pool, err := db.Connect(b.config.DatabaseURL)
+	if err != nil {
+		log.Printf("DB connection failed: %v", err)
+		return nil
+	}
+	log.Println("Database connected (lazy)")
+	b.pool = pool
+	return b.pool
 }
 
 // handleObserveCommand binds the current topic to an agent for observation.
@@ -20,8 +42,9 @@ func (b *Bot) handleObserveCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured. Observation requires a database connection.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use observation.")
 		return
 	}
 
@@ -32,7 +55,7 @@ func (b *Bot) handleObserveCommand(msg *tgbotapi.Message) {
 	}
 
 	topicID := int64(threadID)
-	if err := db.BindTopicToAgent(b.pool, topicID, agentID, "observe"); err != nil {
+	if err := db.BindTopicToAgent(pool, topicID, agentID, "observe"); err != nil {
 		log.Printf("Error binding topic %d to agent %s: %v", topicID, agentID, err)
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 		return
@@ -46,8 +69,9 @@ func (b *Bot) handleUnobserveCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use observation.")
 		return
 	}
 
@@ -58,7 +82,7 @@ func (b *Bot) handleUnobserveCommand(msg *tgbotapi.Message) {
 	}
 
 	topicID := int64(threadID)
-	if err := db.UnbindTopicFromAgent(b.pool, topicID, agentID); err != nil {
+	if err := db.UnbindTopicFromAgent(pool, topicID, agentID); err != nil {
 		log.Printf("Error unbinding topic %d from agent %s: %v", topicID, agentID, err)
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 		return
@@ -72,13 +96,14 @@ func (b *Bot) handleWatchingCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use observation.")
 		return
 	}
 
 	topicID := int64(threadID)
-	bindings, err := db.GetAgentsForTopic(b.pool, topicID)
+	bindings, err := db.GetAgentsForTopic(pool, topicID)
 	if err != nil {
 		log.Printf("Error getting agents for topic %d: %v", topicID, err)
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))

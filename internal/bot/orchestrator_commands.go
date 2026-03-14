@@ -24,8 +24,9 @@ func (b *Bot) handleOrchestStartCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
+	pool := b.getPool()
+	if pool == nil {
+		b.reply(chatID, threadID, "Database not available. Set DATABASE_URL to use orchestration.")
 		return
 	}
 
@@ -99,7 +100,7 @@ func (b *Bot) handleOrchestStartCommand(msg *tgbotapi.Message) {
 	notifyCh := orchestrator.NotifyBridge(ctx, el.TaskEvents)
 
 	orchCfg := orchestrator.Config{
-		Pool:         b.pool,
+		Pool:         pool,
 		Runner:       r,
 		TmuxSession:  b.config.TmuxSessionName,
 		ProjectID:    project,
@@ -150,8 +151,8 @@ func (b *Bot) handleOrchestStopCommand(msg *tgbotapi.Message) {
 	cancel()
 
 	// Offer to kill all agents
-	if b.pool != nil {
-		agents, err := db.ListAgents(b.pool)
+	if pool := b.getPool(); pool != nil {
+		agents, err := db.ListAgents(pool)
 		if err == nil && len(agents) > 0 {
 			kb := tgbotapi.NewInlineKeyboardMarkup(
 				tgbotapi.NewInlineKeyboardRow(
@@ -174,21 +175,26 @@ func (b *Bot) handleOrchestStatusCommand(msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	threadID := getThreadID(msg)
 
-	if b.pool == nil {
-		b.reply(chatID, threadID, "Database not configured.")
-		return
-	}
-
 	b.orchMu.Lock()
 	orchCfg := b.orchConfig
 	b.orchMu.Unlock()
+
+	pool := b.getPool()
+	if pool == nil {
+		running := "stopped"
+		if orchCfg != nil {
+			running = fmt.Sprintf("running (project=%s, maxAgents=%d)", orchCfg.ProjectID, orchCfg.GetMaxAgents())
+		}
+		b.reply(chatID, threadID, fmt.Sprintf("Orchestrator: %s\n(Database not available — no task details)", running))
+		return
+	}
 
 	var projectID *string
 	if orchCfg != nil {
 		projectID = &orchCfg.ProjectID
 	}
 
-	status, err := orchestrator.Status(b.pool, projectID)
+	status, err := orchestrator.Status(pool, projectID)
 	if err != nil {
 		b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 		return
@@ -249,10 +255,11 @@ func (b *Bot) handleOrchestStopCallback(cq *tgbotapi.CallbackQuery, data string)
 	threadID := getThreadID(cq.Message)
 
 	if data == "orchest_stop_killall" {
-		if b.pool == nil {
+		pool := b.getPool()
+		if pool == nil {
 			return
 		}
-		if err := agent.KillAll(b.pool, b.config.TmuxSessionName); err != nil {
+		if err := agent.KillAll(pool, b.config.TmuxSessionName); err != nil {
 			b.reply(chatID, threadID, fmt.Sprintf("Error: %v", err))
 			return
 		}

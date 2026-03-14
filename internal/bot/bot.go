@@ -47,8 +47,9 @@ type Bot struct {
 	minuanoBridge *bridge.Bridge
 	// Message queue (set after construction via SetQueue)
 	msgQueue *queue.Queue
-	// DB pool (optional, set via SetPool for observation commands)
-	pool *pgxpool.Pool
+	// DB pool (optional, connected lazily on first use)
+	pool   *pgxpool.Pool
+	poolMu sync.Mutex
 	// Default runner for agent spawning
 	defaultRunner runner.AgentRunner
 	// Orchestrator state
