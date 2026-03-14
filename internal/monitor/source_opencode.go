@@ -264,6 +264,7 @@ func (o *OpenCodeSource) partToParsedEntry(partID string, part openCodePartData,
 			return nil
 		}
 		return &ParsedEntry{
+			Role:        "assistant",
 			ContentType: "thinking",
 			Text:        text,
 		}
@@ -290,17 +291,14 @@ func (o *OpenCodeSource) handleToolPart(partID string, part openCodePartData) *P
 		}
 		o.knownTools[partID] = "running"
 
-		inputStr := ""
-		if part.State.Input != nil {
-			inputStr = string(part.State.Input)
-		}
+		inputStr := ExtractToolInput(part.Tool, part.State.Input)
 
 		return &ParsedEntry{
 			ContentType: "tool_use",
 			ToolName:    part.Tool,
 			ToolInput:   inputStr,
 			ToolUseID:   partID,
-			Text:        formatOpenCodeToolUse(part.Tool, inputStr),
+			Text:        FormatToolUseSummary(part.Tool, inputStr),
 		}
 
 	case "completed":
@@ -309,10 +307,7 @@ func (o *OpenCodeSource) handleToolPart(partID string, part openCodePartData) *P
 		}
 		o.knownTools[partID] = "completed"
 
-		inputStr := ""
-		if part.State.Input != nil {
-			inputStr = string(part.State.Input)
-		}
+		inputStr := ExtractToolInput(part.Tool, part.State.Input)
 
 		return &ParsedEntry{
 			ContentType: "tool_result",
@@ -328,10 +323,7 @@ func (o *OpenCodeSource) handleToolPart(partID string, part openCodePartData) *P
 		}
 		o.knownTools[partID] = "error"
 
-		inputStr := ""
-		if part.State.Input != nil {
-			inputStr = string(part.State.Input)
-		}
+		inputStr := ExtractToolInput(part.Tool, part.State.Input)
 
 		return &ParsedEntry{
 			ContentType: "tool_result",
@@ -345,13 +337,6 @@ func (o *OpenCodeSource) handleToolPart(partID string, part openCodePartData) *P
 	default:
 		return nil
 	}
-}
-
-func formatOpenCodeToolUse(toolName, input string) string {
-	if toolName == "" {
-		return ""
-	}
-	return fmt.Sprintf("\U0001f527 %s", toolName)
 }
 
 // Close closes the underlying database connection.

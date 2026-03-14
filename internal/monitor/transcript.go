@@ -158,7 +158,7 @@ func parseToolUseBlock(data json.RawMessage) ContentBlock {
 	}
 	json.Unmarshal(data, &block)
 
-	input := extractToolInput(block.Name, block.Input)
+	input := ExtractToolInput(block.Name, block.Input)
 
 	return ContentBlock{
 		Type:      "tool_use",
@@ -194,51 +194,6 @@ func parseThinkingBlock(data json.RawMessage) ContentBlock {
 	return ContentBlock{
 		Type: "thinking",
 		Text: block.Thinking,
-	}
-}
-
-// extractToolInput extracts a human-readable summary of the tool input.
-func extractToolInput(toolName string, inputJSON json.RawMessage) string {
-	if inputJSON == nil {
-		return ""
-	}
-
-	var input map[string]json.RawMessage
-	if err := json.Unmarshal(inputJSON, &input); err != nil {
-		return ""
-	}
-
-	switch toolName {
-	case "Read":
-		return jsonString(input["file_path"])
-	case "Write":
-		return jsonString(input["file_path"])
-	case "Edit":
-		return jsonString(input["file_path"])
-	case "Bash":
-		cmd := jsonString(input["command"])
-		if len(cmd) > 100 {
-			cmd = cmd[:100] + "..."
-		}
-		return cmd
-	case "Grep":
-		return jsonString(input["pattern"])
-	case "Glob":
-		return jsonString(input["pattern"])
-	case "Task":
-		return jsonString(input["description"])
-	case "WebFetch":
-		return jsonString(input["url"])
-	case "WebSearch":
-		return jsonString(input["query"])
-	case "AskUserQuestion":
-		return "interactive"
-	case "ExitPlanMode":
-		return "plan"
-	case "Skill":
-		return jsonString(input["skill"])
-	default:
-		return ""
 	}
 }
 

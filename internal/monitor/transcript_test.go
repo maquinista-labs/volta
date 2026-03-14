@@ -185,9 +185,9 @@ func TestExtractToolInput_AllTools(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
-			got := extractToolInput(tt.tool, []byte(tt.input))
+			got := ExtractToolInput(tt.tool, []byte(tt.input))
 			if got != tt.want {
-				t.Errorf("extractToolInput(%q) = %q, want %q", tt.tool, got, tt.want)
+				t.Errorf("ExtractToolInput(%q) = %q, want %q", tt.tool, got, tt.want)
 			}
 		})
 	}
@@ -199,7 +199,7 @@ func TestExtractToolInput_BashTruncation(t *testing.T) {
 		longCmd += "x"
 	}
 	input := `{"command":"` + longCmd + `"}`
-	got := extractToolInput("Bash", []byte(input))
+	got := ExtractToolInput("Bash", []byte(input))
 	if len(got) > 103 { // 100 + "..."
 		t.Errorf("bash command not truncated: %d chars", len(got))
 	}

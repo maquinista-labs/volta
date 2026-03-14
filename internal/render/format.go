@@ -67,39 +67,39 @@ func formatResultBody(toolName, content string) string {
 		lines = lines[:lineCount]
 	}
 
-	switch toolName {
-	case "Read":
+	switch strings.ToLower(toolName) {
+	case "read":
 		return fmt.Sprintf("Read %d lines", lineCount)
-	case "Write":
+	case "write":
 		return fmt.Sprintf("Wrote %d lines", lineCount)
-	case "Edit":
+	case "edit", "multiedit", "apply_patch":
 		added, removed := countEditChanges(content)
 		if added > 0 || removed > 0 {
 			return fmt.Sprintf("Added %d, removed %d", added, removed)
 		}
 		// No diff — show first line (e.g. "The file ... has been updated successfully.")
 		return firstLine(content)
-	case "Bash":
+	case "bash":
 		return formatPreview(lines, lineCount)
-	case "Grep":
+	case "grep":
 		matchCount := countNonEmpty(lines)
 		summary := fmt.Sprintf("Found %d matches", matchCount)
 		if matchCount > 0 {
 			summary += "\n" + formatPreviewQuote(content)
 		}
 		return summary
-	case "Glob":
+	case "glob", "list":
 		fileCount := countNonEmpty(lines)
 		summary := fmt.Sprintf("Found %d files", fileCount)
 		if fileCount > 0 {
 			summary += "\n" + formatPreviewQuote(content)
 		}
 		return summary
-	case "Task":
+	case "task":
 		return fmt.Sprintf("Agent output %d lines", lineCount)
-	case "WebFetch":
+	case "webfetch":
 		return fmt.Sprintf("Fetched %d characters", len(content))
-	case "WebSearch":
+	case "websearch", "codesearch":
 		resultCount := countSearchResults(content)
 		summary := fmt.Sprintf("%d search results", resultCount)
 		if content != "" {
