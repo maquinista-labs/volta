@@ -99,3 +99,7 @@ func (c *ClaudeRunner) EnvOverrides() map[string]string {
 		"CLAUDECODE": "",
 	}
 }
+
+func (c *ClaudeRunner) HasSessionHook() bool {
+	return true
+}

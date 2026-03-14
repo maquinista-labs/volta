@@ -101,6 +101,10 @@ func (c *CustomRunner) EnvOverrides() map[string]string {
 	return c.Env
 }
 
+func (c *CustomRunner) HasSessionHook() bool {
+	return false
+}
+
 func (c *CustomRunner) renderTemplate(tpl, prompt string) string {
 	t, err := template.New("cmd").Parse(tpl)
 	if err != nil {

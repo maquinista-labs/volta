@@ -51,6 +51,12 @@ type AgentRunner interface {
 
 	// EnvOverrides returns environment variables the runner needs set.
 	EnvOverrides() map[string]string
+
+	// HasSessionHook returns true if this runner writes session_map entries
+	// via an external hook (e.g. Claude Code's SessionStart hook).
+	// When false, the bot writes a preliminary session_map entry and the
+	// TranscriptSource discovers the session ID later.
+	HasSessionHook() bool
 }
 
 var (

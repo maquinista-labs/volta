@@ -91,3 +91,7 @@ func (o *OpenCodeRunner) EnvOverrides() map[string]string {
 	}
 	return env
 }
+
+func (o *OpenCodeRunner) HasSessionHook() bool {
+	return false
+}

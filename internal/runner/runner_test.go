@@ -19,6 +19,7 @@ func (m *mockRunner) RunNonInteractive(ctx context.Context, p string, c Config) 
 func (m *mockRunner) PlannerCommand(p string, c Config) string { return "mock --planner " + p }
 func (m *mockRunner) DetectInstallation() bool     { return true }
 func (m *mockRunner) EnvOverrides() map[string]string { return nil }
+func (m *mockRunner) HasSessionHook() bool              { return false }
 
 func TestRegisterAndGet(t *testing.T) {
 	// Clean up after test

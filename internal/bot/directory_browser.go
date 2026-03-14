@@ -263,51 +263,75 @@ func (b *Bot) createWindowForDir(dir string, userID int64, chatID int64, threadI
 	// Kill the placeholder _init window now that we have a real window
 	tmux.CleanupInitWindow(b.config.TmuxSessionName)
 
-	// Wait for session_map entry (up to 5s) — written by the SessionStart hook.
 	sessionMapPath := filepath.Join(b.config.VoltaDir, "session_map.json")
-	sessionKey := ""
-	for i := 0; i < 10; i++ {
-		time.Sleep(500 * time.Millisecond)
-		sm, err := state.LoadSessionMap(sessionMapPath)
-		if err != nil {
-			continue
-		}
-		for key, entry := range sm {
-			if strings.HasSuffix(key, ":"+windowID) {
-				sessionKey = key
-				b.state.SetWindowState(windowID, state.WindowState{
-					SessionID:  entry.SessionID,
-					CWD:        entry.CWD,
-					WindowName: entry.WindowName,
-				})
-				b.state.SetWindowDisplayName(windowID, entry.WindowName)
+	sessionKey := b.config.TmuxSessionName + ":" + windowID
+
+	r := b.DefaultRunner()
+	hasHook := r != nil && r.HasSessionHook()
+
+	if hasHook {
+		// Runner writes session_map via an external hook — wait for it.
+		sessionKey = ""
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			sm, err := state.LoadSessionMap(sessionMapPath)
+			if err != nil {
+				continue
+			}
+			for key, entry := range sm {
+				if strings.HasSuffix(key, ":"+windowID) {
+					sessionKey = key
+					b.state.SetWindowState(windowID, state.WindowState{
+						SessionID:  entry.SessionID,
+						CWD:        entry.CWD,
+						WindowName: entry.WindowName,
+					})
+					b.state.SetWindowDisplayName(windowID, entry.WindowName)
+					break
+				}
+			}
+			if sessionKey != "" {
 				break
 			}
 		}
-		if sessionKey != "" {
-			break
-		}
-	}
 
-	// Fallback: if the hook didn't fire, discover the session from Claude's JSONL files
-	if sessionKey == "" {
-		log.Printf("Hook did not create session_map entry for %s, trying fallback discovery...", windowID)
-		if sid := discoverSessionID(dir); sid != "" {
+		if sessionKey == "" {
+			log.Printf("Hook did not create session_map entry for %s, trying fallback discovery...", windowID)
 			sessionKey = b.config.TmuxSessionName + ":" + windowID
-			log.Printf("Fallback: discovered session %s for window %s", sid, windowID)
-			state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
-				data[sessionKey] = state.SessionMapEntry{
-					SessionID: sid,
-					CWD:       dir,
-				}
-			})
-		} else {
-			log.Printf("Warning: could not discover session for window %s", windowID)
+			if sid := discoverSessionID(dir); sid != "" {
+				log.Printf("Fallback: discovered session %s for window %s", sid, windowID)
+				state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
+					data[sessionKey] = state.SessionMapEntry{
+						SessionID: sid,
+						CWD:       dir,
+					}
+				})
+			} else {
+				log.Printf("Warning: could not discover session for window %s", windowID)
+			}
 		}
-	}
 
-	// Wait for Claude Code TUI to be ready before sending any text
-	tmux.WaitForReady(b.config.TmuxSessionName, windowID, 15*time.Second)
+		tmux.WaitForReady(b.config.TmuxSessionName, windowID, 15*time.Second)
+	} else {
+		// Runner has no hook — write a preliminary session_map entry with CWD.
+		// The TranscriptSource discovers the session ID from its own database.
+		entry := state.SessionMapEntry{
+			CWD:        dir,
+			WindowName: filepath.Base(dir),
+		}
+		if err := state.ReadModifyWriteSessionMap(sessionMapPath, func(data map[string]state.SessionMapEntry) {
+			data[sessionKey] = entry
+		}); err != nil {
+			log.Printf("Warning: failed to write session_map entry: %v", err)
+		}
+		b.state.SetWindowState(windowID, state.WindowState{
+			CWD:        dir,
+			WindowName: filepath.Base(dir),
+		})
+		b.state.SetWindowDisplayName(windowID, filepath.Base(dir))
+
+		time.Sleep(3 * time.Second)
+	}
 
 	// Bind thread to window
 	userIDStr := strconv.FormatInt(userID, 10)
