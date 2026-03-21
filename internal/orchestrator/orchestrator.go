@@ -34,18 +34,6 @@ type Config struct {
 	// maxAgentsAtomic allows dynamic updates to MaxAgents at runtime.
 	// Initialized from MaxAgents in Run().
 	maxAgentsAtomic *atomic.Int32
-	// SpecsDir is the path to .specs/ directory (auto-detected from repo root if empty).
-	SpecsDir string
-	// PlannerPromptPath is the path to the planner system prompt (e.g. claude/planner-system-prompt.md).
-	PlannerPromptPath string
-	// BotRef is a reference to the bot for creating planner topics (nil when standalone).
-	BotRef interface {
-		CreatePlannerTopic(chatID int64, specTitle string) (int, error)
-		ReplyToThread(chatID int64, threadID int, text string)
-		GetChatID() int64
-	}
-	// ChatID is the Telegram chat ID for creating planner topics.
-	ChatID int64
 }
 
 // SetMaxAgents updates the max agents value at runtime.
@@ -109,13 +97,6 @@ func tick(ctx context.Context, cfg Config) error {
 	// 1. RECONCILE: detect and clean up dead agents (both planner and executor).
 	if err := reconcile(cfg); err != nil {
 		log.Printf("Reconcile error: %v", err)
-	}
-
-	// 1.5. SPEC SCAN: detect new spec files needing planning.
-	if cfg.BotRef != nil {
-		if err := specScan(ctx, cfg); err != nil {
-			log.Printf("Spec scan error: %v", err)
-		}
 	}
 
 	// 2. POLL: count active EXECUTOR agents only (planners don't count against slots).

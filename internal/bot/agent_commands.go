@@ -85,30 +85,13 @@ func (b *Bot) handleAgentSpawnCommand(msg *tgbotapi.Message) {
 		"DATABASE_URL": b.config.DatabaseURL,
 	}
 
-	b.orchMu.Lock()
-	orchCfg := b.orchConfig
-	b.orchMu.Unlock()
-
-	var claudeMDPath string
-	var useWorktrees bool
-	if orchCfg != nil {
-		claudeMDPath = orchCfg.ClaudeMDPath
-		useWorktrees = orchCfg.UseWorktrees
-	}
-
-	// Determine runner: explicit arg > default runner > orchestrator runner > nil
+	// Determine runner: explicit arg > default runner
 	r := explicitRunner
 	if r == nil {
 		r = b.DefaultRunner()
 	}
 
-	var a *agent.Agent
-	var err error
-	if useWorktrees && orchCfg != nil {
-		a, err = agent.SpawnWithWorktree(pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
-	} else {
-		a, err = agent.Spawn(pool, b.config.TmuxSessionName, agentName, claudeMDPath, env, r, "executor")
-	}
+	a, err := agent.Spawn(pool, b.config.TmuxSessionName, agentName, "", env, r, "executor")
 
 	if err != nil {
 		log.Printf("Error spawning agent %s: %v", agentName, err)

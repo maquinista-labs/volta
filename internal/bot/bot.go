@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/otaviocarvalho/volta/internal/config"
 	"github.com/otaviocarvalho/volta/internal/bridge"
-	"github.com/otaviocarvalho/volta/internal/orchestrator"
 	"github.com/otaviocarvalho/volta/internal/queue"
 	"github.com/otaviocarvalho/volta/internal/runner"
 	"github.com/otaviocarvalho/volta/internal/state"
@@ -52,10 +51,6 @@ type Bot struct {
 	poolMu sync.Mutex
 	// Default runner for agent spawning
 	defaultRunner runner.AgentRunner
-	// Orchestrator state
-	orchCancel context.CancelFunc
-	orchMu     sync.Mutex
-	orchConfig *orchestrator.Config
 }
 
 // New creates a new Bot instance.
@@ -122,10 +117,6 @@ func (b *Bot) registerCommands() {
 		tgbotapi.BotCommand{Command: "agent_spawn", Description: "Spawn a new execution agent"},
 		tgbotapi.BotCommand{Command: "agent_kill", Description: "Kill a specific agent"},
 		tgbotapi.BotCommand{Command: "agent_kill_all", Description: "Kill all agents"},
-		tgbotapi.BotCommand{Command: "orchest_start", Description: "Start the orchestrator"},
-		tgbotapi.BotCommand{Command: "orchest_stop", Description: "Stop the orchestrator"},
-		tgbotapi.BotCommand{Command: "orchest_status", Description: "Show orchestrator status"},
-		tgbotapi.BotCommand{Command: "orchest_scale", Description: "Scale orchestrator agents"},
 	)
 	if _, err := b.api.Request(commands); err != nil {
 		log.Printf("Warning: failed to register bot commands: %v", err)
@@ -292,17 +283,9 @@ func (b *Bot) SetDefaultRunner(r runner.AgentRunner) {
 	b.defaultRunner = r
 }
 
-// DefaultRunner returns the default runner, falling back to the orchestrator's runner.
+// DefaultRunner returns the default runner for agent spawning.
 func (b *Bot) DefaultRunner() runner.AgentRunner {
-	if b.defaultRunner != nil {
-		return b.defaultRunner
-	}
-	b.orchMu.Lock()
-	defer b.orchMu.Unlock()
-	if b.orchConfig != nil {
-		return b.orchConfig.Runner
-	}
-	return nil
+	return b.defaultRunner
 }
 
 // answerCallback answers an inline callback query with a toast message.

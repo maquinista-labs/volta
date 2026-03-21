@@ -77,14 +77,6 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleAgentKillCommand(msg)
 	case "agent_kill_all":
 		b.handleAgentKillAllCommand(msg)
-	case "orchest_start":
-		b.handleOrchestStartCommand(msg)
-	case "orchest_stop":
-		b.handleOrchestStopCommand(msg)
-	case "orchest_status":
-		b.handleOrchestStatusCommand(msg)
-	case "orchest_scale":
-		b.handleOrchestScaleCommand(msg)
 	case "runner":
 		b.handleRunnerCommand(msg)
 	default:
