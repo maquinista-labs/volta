@@ -249,6 +249,24 @@ func (b *Bot) reply(chatID int64, threadID int, text string) {
 	}
 }
 
+// CreatePlannerTopic creates a Telegram forum topic for a planner agent.
+func (b *Bot) CreatePlannerTopic(chatID int64, specTitle string) (int, error) {
+	return b.createForumTopic(chatID, "Plan: "+specTitle)
+}
+
+// ReplyToThread sends a text message to a specific thread.
+func (b *Bot) ReplyToThread(chatID int64, threadID int, text string) {
+	b.reply(chatID, threadID, text)
+}
+
+// GetChatID returns the primary group chat ID from AllowedGroups.
+func (b *Bot) GetChatID() int64 {
+	if len(b.config.AllowedGroups) > 0 {
+		return b.config.AllowedGroups[0]
+	}
+	return 0
+}
+
 // API returns the underlying BotAPI for use by other packages.
 func (b *Bot) API() *tgbotapi.BotAPI {
 	return b.api

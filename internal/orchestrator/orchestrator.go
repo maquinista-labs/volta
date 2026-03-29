@@ -36,6 +36,8 @@ type Config struct {
 	maxAgentsAtomic *atomic.Int32
 	// SpecsDir is the path to .specs/ directory (auto-detected from repo root if empty).
 	SpecsDir string
+	// PlannerPromptPath is the path to the planner system prompt (e.g. claude/planner-system-prompt.md).
+	PlannerPromptPath string
 	// BotRef is a reference to the bot for creating planner topics (nil when standalone).
 	BotRef interface {
 		CreatePlannerTopic(chatID int64, specTitle string) (int, error)

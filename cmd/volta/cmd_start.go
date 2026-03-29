@@ -246,6 +246,9 @@ func runStart() error {
 						NotifyFunc: func(message string) {
 							log.Printf("Orchestrator: %s", message)
 						},
+						BotRef:            b,
+						ChatID:            b.GetChatID(),
+						PlannerPromptPath: cfg.PlannerPromptPath,
 					}
 
 					go func() {

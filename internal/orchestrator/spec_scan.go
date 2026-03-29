@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/otaviocarvalho/volta/internal/agent"
 	"github.com/otaviocarvalho/volta/internal/db"
 	"github.com/otaviocarvalho/volta/internal/git"
+	"github.com/otaviocarvalho/volta/internal/runner"
 	"github.com/otaviocarvalho/volta/internal/spec"
 	"github.com/otaviocarvalho/volta/internal/tmux"
 )
@@ -47,14 +47,12 @@ func specScan(ctx context.Context, cfg Config) error {
 	}
 
 	for _, s := range specs {
-		// Check if task already exists for this spec
+		// Check if task already exists for this spec.
+		// GetTask returns an error when no task is found (via ResolvePartialID),
+		// which is the expected case for new specs that need planning.
 		task, err := db.GetTask(cfg.Pool, s.ID)
-		if err != nil {
-			log.Printf("Spec scan: error checking task for spec %s: %v", s.ID, err)
-			continue
-		}
-		if task != nil {
-			continue // task already exists
+		if err == nil && task != nil {
+			continue // task already exists, skip
 		}
 
 		// Check if we already dispatched a planner for this spec
@@ -86,32 +84,80 @@ func spawnPlannerForSpec(ctx context.Context, cfg Config, s *spec.SpecFile) erro
 	}
 
 	env := map[string]string{
-		"DATABASE_URL": cfg.DatabaseURL,
+		"DATABASE_URL":    cfg.DatabaseURL,
+		"MINUANO_PROJECT": cfg.ProjectID,
 	}
 
-	// Spawn planner agent (role=planner, not counted against maxAgents)
-	a, err := agent.Spawn(cfg.Pool, cfg.TmuxSession, agentID, cfg.ClaudeMDPath, env, cfg.Runner, "planner")
-	if err != nil {
-		return fmt.Errorf("spawning planner agent: %w", err)
+	runnerName := "claude"
+	if cfg.Runner != nil {
+		runnerName = cfg.Runner.Name()
+	}
+
+	// Register planner agent in DB (role=planner, not counted against maxAgents)
+	if err := db.RegisterAgent(cfg.Pool, agentID, cfg.TmuxSession, agentID, nil, nil, runnerName, nil, "planner"); err != nil {
+		return fmt.Errorf("registering planner agent: %w", err)
+	}
+
+	// Build merged env for tmux window
+	mergedEnv := make(map[string]string, len(env))
+	for k, v := range env {
+		mergedEnv[k] = v
+	}
+	if cfg.Runner != nil {
+		for k, v := range cfg.Runner.EnvOverrides() {
+			mergedEnv[k] = v
+		}
+	}
+
+	if err := tmux.NewWindowWithDir(cfg.TmuxSession, agentID, ".", mergedEnv); err != nil {
+		db.DeleteAgent(cfg.Pool, agentID)
+		return fmt.Errorf("creating planner tmux window: %w", err)
+	}
+
+	// Send bootstrap env exports
+	scriptsDir := filepath.Join(filepath.Dir(cfg.ClaudeMDPath), "..", "scripts")
+	absScripts, _ := filepath.Abs(scriptsDir)
+
+	bootstrap := []string{
+		fmt.Sprintf("export AGENT_ID=%q", agentID),
+		fmt.Sprintf("export DATABASE_URL=%q", cfg.DatabaseURL),
+		fmt.Sprintf("export MINUANO_PROJECT=%q", cfg.ProjectID),
+		fmt.Sprintf("export PATH=\"$PATH:%s\"", absScripts),
+	}
+
+	// Use the runner's PlannerCommand with the planner system prompt
+	plannerPrompt := cfg.PlannerPromptPath
+	if plannerPrompt == "" {
+		// Fall back to finding it relative to ClaudeMDPath
+		plannerPrompt = filepath.Join(filepath.Dir(cfg.ClaudeMDPath), "planner-system-prompt.md")
+	}
+
+	if cfg.Runner != nil {
+		bootstrap = append(bootstrap, cfg.Runner.PlannerCommand(plannerPrompt, runner.Config{Env: env}))
+	} else {
+		bootstrap = append(bootstrap, fmt.Sprintf("claude --dangerously-skip-permissions --system-prompt \"$(cat %s)\"", plannerPrompt))
+	}
+
+	for _, cmd := range bootstrap {
+		tmux.SendKeysWithDelay(cfg.TmuxSession, agentID, cmd, 100)
 	}
 
 	// Track the dispatched planner
 	plannerMu.Lock()
-	dispatchedSpecs[s.ID] = a.ID
+	dispatchedSpecs[s.ID] = agentID
 	plannerMu.Unlock()
 
-	// Send spec content as prompt to the planner
-	prompt := fmt.Sprintf("Read the following spec and decompose it into tasks. "+
-		"Present a plan for approval.\n\n---\n\nSpec: %s\nID: %s\n\n%s",
-		s.Title, s.ID, s.Body)
+	// Write spec content to temp file and send as initial prompt
+	prompt := fmt.Sprintf("Read the following spec and decompose it into tasks.\n\n---\n\nSpec: %s\nID: %s\nProject: %s\n\n%s",
+		s.Title, s.ID, cfg.ProjectID, s.Body)
 
-	cfg.BotRef.ReplyToThread(cfg.ChatID, threadID, fmt.Sprintf("Planner agent spawned: %s\nSpec: %s", a.ID, s.Title))
+	cfg.BotRef.ReplyToThread(cfg.ChatID, threadID, fmt.Sprintf("Planner agent spawned: %s\nSpec: %s", agentID, s.Title))
 
-	// Send prompt to the tmux window via the planner's window
+	// Send prompt to the planner after it starts up
 	sendPlannerPrompt(cfg.TmuxSession, agentID, prompt)
 
-	log.Printf("Spec scan: spawned planner %s for spec %s in topic %d", a.ID, s.ID, threadID)
-	notify(cfg, fmt.Sprintf("Planner spawned: %s for spec %s", a.ID, s.Title))
+	log.Printf("Spec scan: spawned planner %s for spec %s in topic %d", agentID, s.ID, threadID)
+	notify(cfg, fmt.Sprintf("Planner spawned: %s for spec %s", agentID, s.Title))
 
 	return nil
 }

@@ -114,7 +114,9 @@ func (b *Bot) handleOrchestStartCommand(msg *tgbotapi.Message) {
 			log.Printf("Orchestrator: %s", message)
 			b.reply(chatID, threadID, message)
 		},
-		ChatID: chatID,
+		ChatID:            chatID,
+		BotRef:            b,
+		PlannerPromptPath: b.config.PlannerPromptPath,
 	}
 
 	b.orchMu.Lock()
