@@ -82,7 +82,16 @@ func (o *OpenCodeSource) DiscoverSessions() []ActiveSession {
 	// Discover or re-discover session IDs.
 	// OpenCode may create new sessions for the same directory (e.g. on restart),
 	// so we always check the latest session and update if it changed.
+	// Only discover for opencode-owned windows to avoid overwriting Claude session IDs.
 	for key, entry := range sm {
+		windowID := windowIDFromSessionKey(key)
+		if windowID == "" {
+			continue
+		}
+		if o.appState.GetWindowRunner(windowID) != "opencode" {
+			continue
+		}
+
 		discovered, err := o.discoverSession(entry.CWD)
 		if err != nil {
 			continue
@@ -102,12 +111,20 @@ func (o *OpenCodeSource) DiscoverSessions() []ActiveSession {
 			}
 		})
 
-		// Reset offset so we read from the start of the new session
-		o.monitorState.RemoveSession(key)
-
 		if old == "" {
-			log.Printf("OpenCode session discovered: %s -> %s", entry.CWD, discovered)
+			// New window: initialize offset to current session time to avoid replaying history.
+			// OpenCode shares one session per directory, so multiple windows would all see
+			// historical messages if we started from offset 0.
+			currentTime := o.getCurrentTimeUpdated(discovered)
+			if currentTime > 0 {
+				o.monitorState.UpdateOffset(key, discovered, "opencode:sqlite", currentTime)
+			} else {
+				o.monitorState.RemoveSession(key)
+			}
+			log.Printf("OpenCode session discovered: %s -> %s (offset: %d)", entry.CWD, discovered, currentTime)
 		} else {
+			// Session changed: reset offset so we read from the start of the new session
+			o.monitorState.RemoveSession(key)
 			log.Printf("OpenCode session changed: %s -> %s (was %s)", entry.CWD, discovered, old)
 		}
 	}
@@ -148,6 +165,23 @@ func (o *OpenCodeSource) discoverSession(directory string) (string, error) {
 		return "", fmt.Errorf("discovering session for %s: %w", directory, err)
 	}
 	return sessionID, nil
+}
+
+// getCurrentTimeUpdated returns the latest time_updated for a session,
+// used to initialize new windows to avoid replaying history.
+func (o *OpenCodeSource) getCurrentTimeUpdated(sessionID string) int64 {
+	if err := o.ensureDB(); err != nil {
+		return 0
+	}
+	var maxTime int64
+	err := o.db.QueryRow(
+		`SELECT COALESCE(MAX(time_updated), 0) FROM part WHERE session_id = ?`,
+		sessionID,
+	).Scan(&maxTime)
+	if err != nil {
+		return 0
+	}
+	return maxTime
 }
 
 func (o *OpenCodeSource) ReadNewEntries(session ActiveSession, lastOffset int64) ([]ParsedEntry, int64, error) {
