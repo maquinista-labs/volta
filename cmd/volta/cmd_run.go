@@ -105,7 +105,7 @@ func init() {
 	runCmd.Flags().StringVar(&runNames, "names", "", "comma-separated agent names")
 	runCmd.Flags().BoolVar(&runAttach, "attach", false, "attach to tmux session after spawning")
 	runCmd.Flags().BoolVar(&runWorktrees, "worktrees", false, "isolate each agent in a git worktree")
-	runCmd.Flags().StringVar(&runRunner, "runner", "claude", "agent runner to use")
+	runCmd.Flags().StringVar(&runRunner, "runner", "claude", "agent runner to use (claude, openclaude, opencode)")
 	rootCmd.AddCommand(runCmd)
 }
 

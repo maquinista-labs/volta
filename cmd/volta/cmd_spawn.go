@@ -81,6 +81,6 @@ var spawnCmd = &cobra.Command{
 
 func init() {
 	spawnCmd.Flags().BoolVar(&spawnWorktrees, "worktrees", false, "isolate agent in a git worktree")
-	spawnCmd.Flags().StringVar(&spawnRunner, "runner", "claude", "agent runner to use")
+	spawnCmd.Flags().StringVar(&spawnRunner, "runner", "claude", "agent runner to use (claude, openclaude, opencode)")
 	rootCmd.AddCommand(spawnCmd)
 }

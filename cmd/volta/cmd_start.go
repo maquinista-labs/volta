@@ -52,7 +52,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().StringVar(&cfgPath, "env", "", "path to .env config file")
-	startCmd.Flags().StringVar(&startRunner, "runner", "", "default agent runner (claude, opencode)")
+	startCmd.Flags().StringVar(&startRunner, "runner", "", "default agent runner (claude, openclaude, opencode)")
 	startCmd.Flags().BoolVar(&startOrchestrate, "orchestrate", false, "run orchestrator alongside bot")
 	startCmd.Flags().StringVar(&startOrchProject, "orchestrate-project", "", "project for orchestrator")
 	startCmd.Flags().IntVar(&startOrchMaxAgents, "orchestrate-max-agents", 3, "max agents for orchestrator")
@@ -172,9 +172,13 @@ func runStart() error {
 	opencodeSrc := monitor.NewOpenCodeSource(cfg, b.State(), ms)
 	monitor.RegisterSource("opencode", opencodeSrc)
 
+	openclaudeSrc := monitor.NewOpenClaudeSource(cfg, b.State(), ms)
+	monitor.RegisterSource("openclaude", openclaudeSrc)
+
 	mon := monitor.New(cfg, b.State(), ms, q)
 	mon.AddSource(claudeSrc)
 	mon.AddSource(opencodeSrc)
+	mon.AddSource(openclaudeSrc)
 	mon.PlanHandler = b.HandlePlanFromMonitor
 
 	sp := bot.NewStatusPoller(b, q, mon)
